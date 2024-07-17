@@ -5,6 +5,10 @@
 #include "AC_CustomControl_PID.h"
 #include "AC_AttitudeControl/AC_AttitudeControl_Multi.h"
 
+#include <iostream>
+#include <sstream>
+
+
 // table of user settable parameters
 const AP_Param::GroupInfo AC_CustomControl_PID::var_info[] = {
     // @Param: ANG_RLL_P
@@ -377,6 +381,10 @@ Vector3f AC_CustomControl_PID::update()
     motor_out.x = _pid_atti_rate_roll.update_all(target_rate[0], gyro_latest[0], _dt, false);
     motor_out.y = _pid_atti_rate_pitch.update_all(target_rate[1], gyro_latest[1], _dt, false);
     motor_out.z = _pid_atti_rate_yaw.update_all(target_rate[2], gyro_latest[2], _dt, false);
+
+    // GCS_SEND_TEXT(MAV_SEVERITY_INFO, "roll: %s", std::to_string(attitude_body.get_euler_roll()).c_str());
+    // GCS_SEND_TEXT(MAV_SEVERITY_INFO, "pitch: %s", std::to_string(attitude_body.get_euler_pitch()).c_str());
+    // GCS_SEND_TEXT(MAV_SEVERITY_INFO, "yaw: %s", std::to_string(attitude_body.get_euler_yaw()).c_str());
 
     return motor_out;
 }
