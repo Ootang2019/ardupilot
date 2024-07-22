@@ -108,6 +108,13 @@ public:
         return ahrs.groundspeed_vector();
     }
 
+    
+    // Yu-Tang Edited
+    Vector3f airspeed_vector(void) {
+        return ahrs.airspeed_vector();
+    }
+
+
     bool get_velocity_NED(Vector3f &vec) const WARN_IF_UNUSED {
         return ahrs.get_velocity_NED(vec);
     }
