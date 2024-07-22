@@ -1,9 +1,9 @@
 #include "AC_CustomControl_config.h"
 
 // #if AP_CUSTOMCONTROL_EMPTY_ENABLED
-#include <iostream>
-#include <sstream>
-#include <chrono>
+// #include <iostream>
+// #include <sstream>
+// #include <chrono>
 
 #include "util.h"
 #include "AC_CustomControl_XYZ.h"
@@ -11,13 +11,13 @@
 
 #include <GCS_MAVLink/GCS.h>
 
-using namespace std;
-using std::chrono::duration;
-using std::chrono::duration_cast;
-using std::chrono::high_resolution_clock;
-using std::chrono::milliseconds;
+// using namespace std;
+// using std::chrono::duration;
+// using std::chrono::duration_cast;
+// using std::chrono::high_resolution_clock;
+// using std::chrono::milliseconds;
 
-# define M_PI           3.14159265358979323846
+// # define M_PI           3.14159265358979323846
 
 // table of user settable parameters
 const AP_Param::GroupInfo AC_CustomControl_XYZ::var_info[] = {
@@ -133,26 +133,26 @@ Vector3f AC_CustomControl_XYZ::update(void)
 
 
     // adaptor
-    std::vector<std::vector<double>> c;
-    c = conv1d(NN::BUFFER, NN::CNN_W1, NN::CNN_B1, 1, 4, 1);
-    c = chomp1d(c, 4);
-    c = relu2D(c);
+    // std::vector<std::vector<double>> c;
+    // c = conv1d(NN::BUFFER, NN::CNN_W1, NN::CNN_B1, 1, 4, 1);
+    // c = chomp1d(c, 4);
+    // c = relu2D(c);
 
-    c = conv1d(c, NN::CNN_W2, NN::CNN_B2, 1, 4, 1);
-    c = chomp1d(c, 4);
-    c = relu2D(c);
+    // c = conv1d(c, NN::CNN_W2, NN::CNN_B2, 1, 4, 1);
+    // c = chomp1d(c, 4);
+    // c = relu2D(c);
 
-    c = vec2DAdd(c, NN::BUFFER);
-    c = relu2D(c);
+    // c = vec2DAdd(c, NN::BUFFER);
+    // c = relu2D(c);
 
-    std::vector<double> z = getLastColumn(c);
-    std::vector<double> latent = linear_layer(NN::CNN_LB, NN::CNN_LW, z, false);
+    // std::vector<double> z = getLastColumn(c);
+    // std::vector<double> latent = linear_layer(NN::CNN_LB, NN::CNN_LW, z, false);
 
-    std::vector<double> obs = vecCat(NN::OBS, latent);
-    std::vector<double> context_input = vecCat(obs, NN::TASK);
+    std::vector<double> obs = vecCat(NN::OBS, NN::latent);
+    // std::vector<double> context_input = vecCat(obs, NN::TASK);
 
     // context encoder
-    std::vector<double> tmp = linear_layer(NN::WIN_B, NN::WIN_W, context_input, true);
+    std::vector<double> tmp = linear_layer(NN::WIN_B, NN::WIN_W, NN::context_input, true);
     std::vector<double> w = linear_layer(NN::WOUT_B, NN::WOUT_W, tmp, false);
     w = softmax(w);
 

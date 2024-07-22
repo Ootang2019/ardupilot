@@ -2,7 +2,7 @@
 #ifndef UTIL_H
 #define UTIL_H
 
-#include <iostream>
+// #include <iostream>
 #include <vector>
 #include <cassert>
 #include <cmath>

@@ -1090,7 +1090,7 @@ class chibios(Board):
         env.HAL_MAX_STACK_FRAME_SIZE = 'HAL_MAX_STACK_FRAME_SIZE=%d' % 1300 # set per Wframe-larger-than, ensure its same
         env.CFLAGS += cfg.env.CPU_FLAGS + [
             '-Wlogical-op',
-            '-Wframe-larger-than=1300',
+            # '-Wframe-larger-than=1300',
             '-Wno-attributes',
             '-fno-exceptions',
             '-Wall',
