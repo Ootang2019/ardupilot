@@ -1,5 +1,5 @@
-# pragma once
 
+#pragma once
 #ifndef __NN_PARAMETERS_DEF_H__
 #define __NN_PARAMETERS_DEF_H__
 #include <vector>
@@ -13,6 +13,8 @@ static constexpr int N_LATENT = 1;
 static constexpr int N_HIDDEN = 4;
 static constexpr int N_CONTEXT = 16;
 static constexpr int N_KERNEL = 2;
+static constexpr int N_STACK = 100;
+static constexpr int N_PADD = 1;
 
 static constexpr float AVEL_LIM = 12;
 static constexpr float VEL_LIM = 10;

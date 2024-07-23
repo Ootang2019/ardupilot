@@ -2,12 +2,15 @@
 
 // #if AP_CUSTOMCONTROL_EMPTY_ENABLED
 
-#include <GCS_MAVLink/GCS.h>
-
-#include <algorithm> // for std::copy
-#include "util.h"
 #include "AC_CustomControl_XYZ.h"
+#include <GCS_MAVLink/GCS.h>
+#include <algorithm> // for std::copy
+
+#include "util.h"
+#include "FIFOBuffer.h"
 #include "NN_Parameters.h"
+
+FIFOBuffer fifoBuffer(NN::N_STACK);
 
 // table of user settable parameters
 const AP_Param::GroupInfo AC_CustomControl_XYZ::var_info[] = {
@@ -34,6 +37,12 @@ const AP_Param::GroupInfo AC_CustomControl_XYZ::var_info[] = {
 // initialize in the constructor
 AC_CustomControl_XYZ::AC_CustomControl_XYZ(AC_CustomControl &frontend, AP_AHRS_View *&ahrs, AC_AttitudeControl *&att_control, AP_MotorsMulticopter *&motors, float dt) : AC_CustomControl_Backend(frontend, ahrs, att_control, motors, dt)
 {
+    std::vector<float> dummy_action = {0,0,0,0};
+    std::vector<float> dummys = vecCat(NN::OBS, dummy_action);
+    for (int i = 0; i < NN::N_STACK; ++i){
+        fifoBuffer.insert(dummys);
+    }
+
     AP_Param::setup_object_defaults(this, var_info);
 }
 
@@ -63,21 +72,21 @@ Vector3f AC_CustomControl_XYZ::update(void)
     // (*)
     Quaternion attitude_body, attitude_target;
     _ahrs->get_quat_body_to_ned(attitude_body);
-    Vector3f airspeed = _ahrs->airspeed_vector();
+    Vector3f airspeed_earth_ned = _ahrs->airspeed_vector();
+    Vector3f airspeed_body_ned = _ahrs->earth_to_body(airspeed_earth_ned);
 
     // Quaternion q_ned2enu(0,-std::sqrt(2)/2,-std::sqrt(2)/2,0);
     // Quaternion q_enu = attitude_body * q_ned2enu;
 
     // (*)
-    // Quaternion q_enu(attitude_body[0], attitude_body[2], attitude_body[1], -attitude_body[3]);
     Vector3f gyro_latest = _ahrs->get_gyro_latest();
-    attitude_target = _att_control->get_attitude_target_quat();
+    // attitude_target = _att_control->get_attitude_target_quat();
 
     // This vector represents the angular error to rotate the thrust vector using x and y and heading using z
     // (*)
-    Vector3f attitude_error;
-    float _thrust_angle, _thrust_error_angle;
-    _att_control->thrust_heading_rotation_angles(attitude_target, attitude_body, attitude_error, _thrust_angle, _thrust_error_angle);
+    // Vector3f attitude_error;
+    // float _thrust_angle, _thrust_error_angle;
+    // _att_control->thrust_heading_rotation_angles(attitude_target, attitude_body, attitude_error, _thrust_angle, _thrust_error_angle);
 
     // recalculate ang vel feedforward from attitude target model
     // rotation from the target frame to the body frame
@@ -119,31 +128,34 @@ Vector3f AC_CustomControl_XYZ::update(void)
     NN::OBS[1] = attitude_body[2];
     NN::OBS[2] = attitude_body[1];
     NN::OBS[3] = -attitude_body[3];
-    // angvel
+    // // angvel
     Vector3f rb_ned_angvel = gyro_latest/NN::AVEL_LIM;
     NN::OBS[4] = rb_ned_angvel[1];
     NN::OBS[5] = rb_ned_angvel[0];
     NN::OBS[6] = -rb_ned_angvel[2];
-    // rbvel
-    Vector3f rb_ned_vel = airspeed/NN::VEL_LIM;
+    // // rbvel
+    Vector3f rb_ned_vel = airspeed_body_ned/NN::VEL_LIM;
     NN::OBS[7] = rb_ned_vel[1];
     NN::OBS[8] = rb_ned_vel[0];
     NN::OBS[9] = -rb_ned_vel[2];
+    // NN::OBS[7] = 0;
+    // NN::OBS[8] = 0;
+    // NN::OBS[9] = 0;
 
     // ###### Inference Starts ######
     // auto t1 = high_resolution_clock::now();
 
     // adaptor
-    std::vector<std::vector<float>> x;
-    x = conv1d(NN::BUFFER, NN::CNN_W1, NN::CNN_B1, 1, 4, 1);
-    x = chomp1d(x, 4);
-    x = relu2D(x);
+    std::vector<std::vector<float>> table = fifoBuffer.getReversedTransposedTable();
+    std::vector<std::vector<float>> x_tmp1 = conv1d(NN::BUFFER, NN::CNN_W1, NN::CNN_B1, 1, NN::N_PADD, 1);
+    std::vector<std::vector<float>> x_tmp2 = chomp1d(x_tmp1, NN::N_PADD);
+    x_tmp2 = relu2D(x_tmp2);
 
-    x = vec2DAdd(x, NN::BUFFER);
-    x = relu2D(x);
+    x_tmp2 = vec2DAdd(x_tmp2, table);
+    x_tmp2 = relu2D(x_tmp2);
 
-    std::vector<float> z = getLastColumn(x);
-    z = linear_layer(NN::CNN_LB, NN::CNN_LW, z, false);
+    std::vector<float> z_tmp = getLastColumn(x_tmp2);
+    std::vector<float> z = linear_layer(NN::CNN_LB, NN::CNN_LW, z_tmp, false);
 
     // policy start here
     std::vector<float> obs = vecCat(NN::OBS, z);
@@ -162,7 +174,9 @@ Vector3f AC_CustomControl_XYZ::update(void)
     NN_out = composition_layer(NN::MEAN_W, NN::MEAN_B, w, NN_out, false);
     clampToRange(NN_out, -1, 1);
 
+    // std::vector<float> NN_out={0,0,0,0};
     std::vector<float> sa_pair = vecCat(NN::OBS, NN_out);
+    fifoBuffer.insert(sa_pair);
 
     // auto t2 = high_resolution_clock::now();
 

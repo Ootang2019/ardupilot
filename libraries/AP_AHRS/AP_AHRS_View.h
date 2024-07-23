@@ -113,6 +113,9 @@ public:
     Vector3f airspeed_vector(void) {
         return ahrs.airspeed_vector();
     }
+    Vector3f earth_to_body(const Vector3f &vec) const {
+        return ahrs.earth_to_body(vec);
+    }
 
 
     bool get_velocity_NED(Vector3f &vec) const WARN_IF_UNUSED {
