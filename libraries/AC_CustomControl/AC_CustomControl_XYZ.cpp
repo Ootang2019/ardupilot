@@ -1,23 +1,13 @@
 #include "AC_CustomControl_config.h"
 
 // #if AP_CUSTOMCONTROL_EMPTY_ENABLED
-// #include <iostream>
-// #include <sstream>
-// #include <chrono>
-
-#include "util.h"
-#include "AC_CustomControl_XYZ.h"
-#include "NN_Parameters.h"
 
 #include <GCS_MAVLink/GCS.h>
 
-// using namespace std;
-// using std::chrono::duration;
-// using std::chrono::duration_cast;
-// using std::chrono::high_resolution_clock;
-// using std::chrono::milliseconds;
-
-// # define M_PI           3.14159265358979323846
+#include <algorithm> // for std::copy
+#include "util.h"
+#include "AC_CustomControl_XYZ.h"
+#include "NN_Parameters.h"
 
 // table of user settable parameters
 const AP_Param::GroupInfo AC_CustomControl_XYZ::var_info[] = {
@@ -71,23 +61,23 @@ Vector3f AC_CustomControl_XYZ::update(void)
     // GCS_SEND_TEXT(MAV_SEVERITY_INFO, "NN controller working");
 
     // (*)
-    // Quaternion attitude_body, attitude_target;
-    // _ahrs->get_quat_body_to_ned(attitude_body);
-    // Vector3f rb_vel_NED = _ahrs->airspeed_vector();
+    Quaternion attitude_body, attitude_target;
+    _ahrs->get_quat_body_to_ned(attitude_body);
+    Vector3f airspeed = _ahrs->airspeed_vector();
 
     // Quaternion q_ned2enu(0,-std::sqrt(2)/2,-std::sqrt(2)/2,0);
     // Quaternion q_enu = attitude_body * q_ned2enu;
 
     // (*)
     // Quaternion q_enu(attitude_body[0], attitude_body[2], attitude_body[1], -attitude_body[3]);
-    // Vector3f gyro_latest = _ahrs->get_gyro_latest();
-    // attitude_target = _att_control->get_attitude_target_quat();
+    Vector3f gyro_latest = _ahrs->get_gyro_latest();
+    attitude_target = _att_control->get_attitude_target_quat();
 
     // This vector represents the angular error to rotate the thrust vector using x and y and heading using z
     // (*)
-    // Vector3f attitude_error;
-    // float _thrust_angle, _thrust_error_angle;
-    // _att_control->thrust_heading_rotation_angles(attitude_target, attitude_body, attitude_error, _thrust_angle, _thrust_error_angle);
+    Vector3f attitude_error;
+    float _thrust_angle, _thrust_error_angle;
+    _att_control->thrust_heading_rotation_angles(attitude_target, attitude_body, attitude_error, _thrust_angle, _thrust_error_angle);
 
     // recalculate ang vel feedforward from attitude target model
     // rotation from the target frame to the body frame
@@ -95,13 +85,13 @@ Vector3f AC_CustomControl_XYZ::update(void)
     // target angle velocity vector in the body frame
     // Vector3f ang_vel_body_feedforward = rotation_target_to_body * _att_control->get_attitude_target_ang_vel();
 
-
     // ###### Prepare NN input ######
     // 0:4 rb_quat # xyzw in ENU
     // 4:7 rb_vel_local/30  # local xyz
     // 7:10 rb_angvel_local/25.1 # local pqr
     // 10:13 err_angle/pi # rpy
     // 13:14 err_vz/30 # local_error_v = target_forward_v - local_forward_v
+    // (*)
     // Eigen::Vector4f rb_quat(q_enu[1], q_enu[2], q_enu[3], q_enu[0]); // ENU
     // Eigen::Vector3f rb_vel(rb_vel_NED[1], rb_vel_NED[0], -rb_vel_NED[2]);
     // Eigen::Vector3f rb_angvel(gyro_latest[1], gyro_latest[0], -gyro_latest[2]);
@@ -110,57 +100,69 @@ Vector3f AC_CustomControl_XYZ::update(void)
     // Eigen::Vector3f rb_ang(q_enu.get_euler_roll(), q_enu.get_euler_pitch(), q_enu.get_euler_yaw());
     // err_ang -= rb_ang;
 
-    // GCS_SEND_TEXT(MAV_SEVERITY_INFO, "velocity: %s \n", matrixToString(rb_vel).c_str());
-
-    // GCS_SEND_TEXT(MAV_SEVERITY_INFO, "quaternion: %s \n", matrixToString(rb_quat).c_str());
-    // GCS_SEND_TEXT(MAV_SEVERITY_INFO, "roll: %s", std::to_string(q_enu.get_euler_roll()).c_str());
-    // GCS_SEND_TEXT(MAV_SEVERITY_INFO, "pitch: %s", std::to_string(q_enu.get_euler_pitch()).c_str());
-    // GCS_SEND_TEXT(MAV_SEVERITY_INFO, "yaw: %s", std::to_string(q_enu.get_euler_yaw()).c_str());
-
     // NN::OBS.head(4) = rb_quat.head(4);
     // NN::OBS.segment(4,3) = rb_vel/30;
     // NN::OBS.segment(7,3) = rb_angvel/25.1;
     // NN::OBS.segment(10,3) = err_ang/M_PI;
     // NN::OBS.segment(13,1) = err_vel.segment(2,1)/30;
-    // NN::OBS.head(4) = rb_quat.head(4);
-    // NN::OBS.segment(4,3) = rb_angvel/NN::AVEL_LIM;
-    // NN::OBS.segment(7,3) = rb_vel/NN::VEL_LIM;
-    // Eigen::Array<float, NN::N_OBS + NN::N_TASK, 1> NN_input;
-    // NN_input << NN::OBS, NN::task;
+
+    // (*)
+    // GCS_SEND_TEXT(MAV_SEVERITY_INFO, "velocity: %s \n", matrixToString(rb_vel).c_str());
+    // GCS_SEND_TEXT(MAV_SEVERITY_INFO, "quaternion: %s \n", matrixToString(rb_quat).c_str());
+    // GCS_SEND_TEXT(MAV_SEVERITY_INFO, "roll: %s", std::to_string(q_enu.get_euler_roll()).c_str());
+    // GCS_SEND_TEXT(MAV_SEVERITY_INFO, "pitch: %s", std::to_string(q_enu.get_euler_pitch()).c_str());
+    // GCS_SEND_TEXT(MAV_SEVERITY_INFO, "yaw: %s", std::to_string(q_enu.get_euler_yaw()).c_str());
+
+    // convert sensor value to network input. Sensor: NED coordinate; NN input: ENU coordinate.
+    // rb_quat
+    NN::OBS[0] = attitude_body[0];
+    NN::OBS[1] = attitude_body[2];
+    NN::OBS[2] = attitude_body[1];
+    NN::OBS[3] = -attitude_body[3];
+    // angvel
+    Vector3f rb_ned_angvel = gyro_latest/NN::AVEL_LIM;
+    NN::OBS[4] = rb_ned_angvel[1];
+    NN::OBS[5] = rb_ned_angvel[0];
+    NN::OBS[6] = -rb_ned_angvel[2];
+    // rbvel
+    Vector3f rb_ned_vel = airspeed/NN::VEL_LIM;
+    NN::OBS[7] = rb_ned_vel[1];
+    NN::OBS[8] = rb_ned_vel[0];
+    NN::OBS[9] = -rb_ned_vel[2];
 
     // ###### Inference Starts ######
     // auto t1 = high_resolution_clock::now();
 
-
     // adaptor
-    // std::vector<std::vector<double>> c;
-    // c = conv1d(NN::BUFFER, NN::CNN_W1, NN::CNN_B1, 1, 4, 1);
-    // c = chomp1d(c, 4);
-    // c = relu2D(c);
+    std::vector<std::vector<float>> x;
+    x = conv1d(NN::BUFFER, NN::CNN_W1, NN::CNN_B1, 1, 4, 1);
+    x = chomp1d(x, 4);
+    x = relu2D(x);
 
-    // c = conv1d(c, NN::CNN_W2, NN::CNN_B2, 1, 4, 1);
-    // c = chomp1d(c, 4);
-    // c = relu2D(c);
+    x = vec2DAdd(x, NN::BUFFER);
+    x = relu2D(x);
 
-    // c = vec2DAdd(c, NN::BUFFER);
-    // c = relu2D(c);
+    std::vector<float> z = getLastColumn(x);
+    z = linear_layer(NN::CNN_LB, NN::CNN_LW, z, false);
 
-    // std::vector<double> z = getLastColumn(c);
-    // std::vector<double> latent = linear_layer(NN::CNN_LB, NN::CNN_LW, z, false);
-
-    std::vector<double> obs = vecCat(NN::OBS, NN::latent);
-    // std::vector<double> context_input = vecCat(obs, NN::TASK);
+    // policy start here
+    std::vector<float> obs = vecCat(NN::OBS, z);
+    std::vector<float> context_input = vecCat(obs, NN::TASK);
 
     // context encoder
-    std::vector<double> tmp = linear_layer(NN::WIN_B, NN::WIN_W, NN::context_input, true);
-    std::vector<double> w = linear_layer(NN::WOUT_B, NN::WOUT_W, tmp, false);
+    std::vector<float> w;
+    w = linear_layer(NN::WIN_B, NN::WIN_W, context_input, true);
+    w = linear_layer(NN::WOUT_B, NN::WOUT_W, w, false);
     w = softmax(w);
 
-    // // composition layers
-    std::vector<double> out1 = composition_layer(NN::LIN_W, NN::LIN_B, w, obs, true);
-    std::vector<double> out2 = composition_layer(NN::L0_W, NN::L0_B, w, out1, true);
-    std::vector<double> NN_out = composition_layer(NN::MEAN_W, NN::MEAN_B, w, out2, false);
+    // // // composition layers
+    std::vector<float> NN_out;
+    NN_out = composition_layer(NN::LIN_W, NN::LIN_B, w, obs, true);
+    NN_out = composition_layer(NN::L0_W, NN::L0_B, w, NN_out, true);
+    NN_out = composition_layer(NN::MEAN_W, NN::MEAN_B, w, NN_out, false);
     clampToRange(NN_out, -1, 1);
+
+    std::vector<float> sa_pair = vecCat(NN::OBS, NN_out);
 
     // auto t2 = high_resolution_clock::now();
 
@@ -171,8 +173,8 @@ Vector3f AC_CustomControl_XYZ::update(void)
     // GCS_SEND_TEXT(MAV_SEVERITY_INFO, "NN output: %s", matrixStr.c_str());
 
     // printing the inference time of the Network
-    // duration<double, std::milli> ms_double = t2 - t1;
-    // double loop_frequency = 1000 / ms_double.count();
+    // duration<float, std::milli> ms_float = t2 - t1;
+    // float loop_frequency = 1000 / ms_float.count();
     // GCS_SEND_TEXT(MAV_SEVERITY_INFO, "NN freq: %s", std::to_string(loop_frequency).c_str());
 
     // return what arducopter main controller outputted
