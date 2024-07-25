@@ -3,10 +3,17 @@
 #ifndef UTIL_H
 #define UTIL_H
 
-// #include <iostream>
 #include <vector>
 #include <cassert>
 #include <cmath>
+
+// for printing
+#include <string>
+#include <iostream>
+
+std::string vectorToString(const std::vector<float>& vec);
+// for printing
+
 
 std::vector<float> getLastColumn(const std::vector<std::vector<float>>& matrix);
 
