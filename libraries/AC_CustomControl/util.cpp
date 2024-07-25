@@ -1,16 +1,16 @@
 #include "util.h"
 
 // for printing
-// std::string vectorToString(const std::vector<float>& vec) {
-//     std::string result = "[";
-//     for (size_t i = 0; i < vec.size(); ++i) {
-//         result += std::to_string(vec[i]);
-//         if (i != vec.size() - 1) {
-//             result += ", ";
-//         }
-//     }
-//     result += "]";
-//     return result;
+std::string vectorToString(const std::vector<float>& vec) {
+    std::string result = "[";
+    for (size_t i = 0; i < vec.size(); ++i) {
+        result += std::to_string(vec[i]);
+        if (i != vec.size() - 1) {
+            result += ", ";
+        }
+    }
+    result += "]";
+    return result;
 }
 // for printing
 

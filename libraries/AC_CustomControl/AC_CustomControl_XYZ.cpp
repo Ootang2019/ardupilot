@@ -38,10 +38,8 @@ const AP_Param::GroupInfo AC_CustomControl_XYZ::var_info[] = {
 // initialize in the constructor
 AC_CustomControl_XYZ::AC_CustomControl_XYZ(AC_CustomControl &frontend, AP_AHRS_View *&ahrs, AC_AttitudeControl *&att_control, AP_MotorsMulticopter *&motors, float dt) : AC_CustomControl_Backend(frontend, ahrs, att_control, motors, dt)
 {
-    std::vector<float> dummy_action(NN::N_ACT);
-    std::vector<float> dummys = vecCat(NN::OBS, dummy_action);
     for (int i = 0; i < NN::N_STACK; ++i){
-        fifoBuffer.insert(dummys);
+        fifoBuffer.insert(NN::OBS);
     }
 
     AP_Param::setup_object_defaults(this, var_info);
@@ -113,9 +111,10 @@ Vector3f AC_CustomControl_XYZ::update(void)
     NN::OBS[8] = rb_ned_vel[0];
     NN::OBS[9] = -rb_ned_vel[2];
 
-    // std::vector<float> vel = {NN::OBS[7], NN::OBS[8], NN::OBS[9]}; 
-    // std::string print_Str = vectorToString(vel);
-    // GCS_SEND_TEXT(MAV_SEVERITY_INFO, "print_Str: %s", print_Str.c_str());
+    // std::vector<float> vec = {NN::OBS[0], NN::OBS[1], NN::OBS[2], NN::OBS[3]}; 
+    std::vector<float> vec = {NN::OBS[7], NN::OBS[8], NN::OBS[9]}; 
+    std::string print_Str = vectorToString(vec);
+    GCS_SEND_TEXT(MAV_SEVERITY_INFO, "obs: %s", print_Str.c_str());
 
     // ###### Inference Starts ######
     // auto t1 = high_resolution_clock::now();
@@ -123,7 +122,7 @@ Vector3f AC_CustomControl_XYZ::update(void)
     // adaptor
     // std::vector<std::vector<float>> table = fifoBuffer.getReversedTransposedTable();
     std::vector<std::vector<float>> table = fifoBuffer.getTransposedTable();
-    assert(table.size() == NN::N_OBS+NN::N_ACT);
+    assert(table.size() == NN::N_OBS);
     assert(table[0].size() == NN::N_STACK);
 
     // // (*)
@@ -156,16 +155,18 @@ Vector3f AC_CustomControl_XYZ::update(void)
     clampToRange(NN_out, -1, 1);
     assert(NN_out.size() == NN::N_ACT);
 
-    std::vector<float> sa_pair = vecCat(NN::OBS, NN_out);
-    fifoBuffer.insert(sa_pair);
+    NN::OBS[10] = NN_out[0];
+    NN::OBS[11] = NN_out[1];
+    NN::OBS[12] = NN_out[2];
+    fifoBuffer.insert(NN::OBS);
 
     // auto t2 = high_resolution_clock::now();
 
     // ###### Inference Ends ######
 
     // printing the output of the Network
-    // std::string NN_outStr = vectorToString(NN_out);
-    // GCS_SEND_TEXT(MAV_SEVERITY_INFO, "NN output: %s", NN_outStr.c_str());
+    std::string NN_outStr = vectorToString(NN_out);
+    GCS_SEND_TEXT(MAV_SEVERITY_INFO, "NNout: %s", NN_outStr.c_str());
 
     // printing the inference time of the Network
     // duration<float, std::milli> ms_float = t2 - t1;
