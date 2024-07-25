@@ -164,8 +164,8 @@ Vector3f AC_CustomControl_XYZ::update(void)
     // ###### Inference Ends ######
 
     // printing the output of the Network
-    std::string NN_outStr = vectorToString(NN_out);
-    GCS_SEND_TEXT(MAV_SEVERITY_INFO, "NN output: %s", NN_outStr.c_str());
+    // std::string NN_outStr = vectorToString(NN_out);
+    // GCS_SEND_TEXT(MAV_SEVERITY_INFO, "NN output: %s", NN_outStr.c_str());
 
     // printing the inference time of the Network
     // duration<float, std::milli> ms_float = t2 - t1;
@@ -174,9 +174,9 @@ Vector3f AC_CustomControl_XYZ::update(void)
 
     // return what arducopter main controller outputted
     Vector3f motor_out;
-    motor_out.x = 0.1*NN_out[1];
-    motor_out.y = 0.1*NN_out[0];
-    motor_out.z = -0.1*NN_out[2];
+    motor_out.x = NN::AUTHORITY*NN_out[1];
+    motor_out.y = NN::AUTHORITY*NN_out[0];
+    motor_out.z = -NN::AUTHORITY*NN_out[2];
 
     // motor_out.x = 0;
     // motor_out.y = 0;

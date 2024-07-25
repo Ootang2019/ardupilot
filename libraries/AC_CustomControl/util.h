@@ -8,10 +8,9 @@
 #include <cmath>
 
 // for printing
-#include <string>
-#include <iostream>
-
-std::string vectorToString(const std::vector<float>& vec);
+// #include <string>
+// #include <iostream>
+// std::string vectorToString(const std::vector<float>& vec);
 // for printing
 
 
