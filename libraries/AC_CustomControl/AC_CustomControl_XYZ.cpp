@@ -180,8 +180,8 @@ Vector3f AC_CustomControl_XYZ::update(void)
     motor_out.z = -NN::AUTHORITY*NN_out[2];
 
     // motor_out.x = 0;
-    // motor_out.y = 0;
-    // motor_out.z = 0;
+    motor_out.y = 0;
+    motor_out.z = 0;
 
     return motor_out;
 }
