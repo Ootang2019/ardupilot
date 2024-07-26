@@ -112,9 +112,9 @@ Vector3f AC_CustomControl_XYZ::update(void)
     NN::OBS[9] = -rb_ned_vel[2];
 
     // std::vector<float> vec = {NN::OBS[0], NN::OBS[1], NN::OBS[2], NN::OBS[3]}; 
-    std::vector<float> vec = {NN::OBS[7], NN::OBS[8], NN::OBS[9]}; 
-    std::string print_Str = vectorToString(vec);
-    GCS_SEND_TEXT(MAV_SEVERITY_INFO, "obs: %s", print_Str.c_str());
+    // std::vector<float> vec = {NN::OBS[7], NN::OBS[8], NN::OBS[9]}; 
+    // std::string print_Str = vectorToString(vec);
+    // GCS_SEND_TEXT(MAV_SEVERITY_INFO, "obs: %s", print_Str.c_str());
 
     // ###### Inference Starts ######
     // auto t1 = high_resolution_clock::now();
@@ -165,8 +165,8 @@ Vector3f AC_CustomControl_XYZ::update(void)
     // ###### Inference Ends ######
 
     // printing the output of the Network
-    std::string NN_outStr = vectorToString(NN_out);
-    GCS_SEND_TEXT(MAV_SEVERITY_INFO, "NNout: %s", NN_outStr.c_str());
+    // std::string NN_outStr = vectorToString(NN_out);
+    // GCS_SEND_TEXT(MAV_SEVERITY_INFO, "NNout: %s", NN_outStr.c_str());
 
     // printing the inference time of the Network
     // duration<float, std::milli> ms_float = t2 - t1;
