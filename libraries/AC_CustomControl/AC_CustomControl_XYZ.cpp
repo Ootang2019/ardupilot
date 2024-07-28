@@ -66,8 +66,6 @@ Vector3f AC_CustomControl_XYZ::update(void)
         break;
     }
 
-    // GCS_SEND_TEXT(MAV_SEVERITY_INFO, "NN controller working");
-
     // (*)
     Quaternion attitude_body, attitude_target;
     _ahrs->get_quat_body_to_ned(attitude_body);
@@ -177,11 +175,11 @@ Vector3f AC_CustomControl_XYZ::update(void)
     Vector3f motor_out;
     motor_out.x = NN::AUTHORITY*NN_out[1];
     motor_out.y = NN::AUTHORITY*NN_out[0];
-    motor_out.z = -NN::AUTHORITY*NN_out[2];
+    // motor_out.z = -NN::AUTHORITY*NN_out[2];
 
     // motor_out.x = 0;
     // motor_out.y = 0;
-    // motor_out.z = 0;
+    motor_out.z = 0;
 
     return motor_out;
 }
