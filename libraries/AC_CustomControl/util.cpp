@@ -209,10 +209,14 @@ std::vector<float> composition_layer(
     const std::vector<float>& input,                           // [indim]
     bool activation = true) {
     // Ensure dimensions are correct
-    assert(weight.size() == bias.size());
-    assert(weight[0].size() == bias[0].size());
     assert(weight[0][0].size() == input.size());
     assert(comp_weight.size() == weight.size());
+
+    bool has_bias = !bias.empty();
+    if (has_bias) {
+        assert(weight.size() == bias.size());
+        assert(weight[0].size() == bias[0].size());
+    }
 
     size_t contextdim = weight.size();
     size_t outdim = weight[0].size();
@@ -220,7 +224,11 @@ std::vector<float> composition_layer(
     // Compute x = bias + weight * input for each context dimension
     std::vector<std::vector<float>> x(contextdim, std::vector<float>(outdim));
     for (size_t i = 0; i < contextdim; ++i) {
-        x[i] = vecAdd(bias[i], matVecMul(weight[i], input));
+        if (has_bias) {
+            x[i] = vecAdd(bias[i], matVecMul(weight[i], input));
+        } else {
+            x[i] = matVecMul(weight[i], input);
+        }
     }
 
     // Compute output = comp_weight * sum(x)
