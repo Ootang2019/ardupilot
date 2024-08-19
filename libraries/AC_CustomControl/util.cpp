@@ -1,18 +1,28 @@
 #include "util.h"
 
 // for printing
-// std::string vectorToString(const std::vector<float>& vec) {
-//     std::string result = "[";
-//     for (size_t i = 0; i < vec.size(); ++i) {
-//         result += std::to_string(vec[i]);
-//         if (i != vec.size() - 1) {
-//             result += ", ";
-//         }
-//     }
-//     result += "]";
-//     return result;
-// }
+std::string vectorToString(const std::vector<float>& vec) {
+    std::string result = "[";
+    for (size_t i = 0; i < vec.size(); ++i) {
+        result += std::to_string(vec[i]);
+        if (i != vec.size() - 1) {
+            result += ", ";
+        }
+    }
+    result += "]";
+    return result;
+}
 // for printing
+
+float mapAngleToRange(float angle) {
+    // Normalize the angle to the range [-pi, pi]
+    const float PI = 3.14159265358979323846;
+    angle = fmod(angle + PI, 2 * PI);
+    if (angle < 0) {
+        angle += 2 * PI;
+    }
+    return angle - PI;
+}
 
 // Function to get the last column of a 2D vector
 std::vector<float> getLastColumn(const std::vector<std::vector<float>>& matrix) {

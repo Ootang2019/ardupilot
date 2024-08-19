@@ -8,11 +8,12 @@
 #include <cmath>
 
 // for printing
-// #include <string>
-// #include <iostream>
-// std::string vectorToString(const std::vector<float>& vec);
+#include <string>
+#include <iostream>
+std::string vectorToString(const std::vector<float>& vec);
 // for printing
 
+float mapAngleToRange(float angle);
 
 std::vector<float> getLastColumn(const std::vector<std::vector<float>>& matrix);
 

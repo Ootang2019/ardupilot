@@ -15,6 +15,7 @@ FIFOBuffer fifoBuffer(NN::N_STACK);
 int adaptor_counter=0;
 int ADAPTOR_FREQ=4;
 std::vector<float> latent_z(NN::N_LATENT, 0.0);
+const float PI = 3.14159265358979323846;
 
 // table of user settable parameters
 const AP_Param::GroupInfo AC_CustomControl_XYZ::var_info[] = {
@@ -22,7 +23,7 @@ const AP_Param::GroupInfo AC_CustomControl_XYZ::var_info[] = {
     // @DisplayName: XYZ param1
     // @Description: Dummy parameter for empty custom controller backend
     // @User: Advanced
-    AP_GROUPINFO("AUTHORITY", 1, AC_CustomControl_XYZ, authority, 0.1f),
+    AP_GROUPINFO("AUTHORITY", 1, AC_CustomControl_XYZ, authority, NN::AUTHORITY),
 
     AP_GROUPEND};
 
@@ -62,43 +63,36 @@ Vector3f AC_CustomControl_XYZ::update(void)
 
     Quaternion attitude_body, attitude_target;
     _ahrs->get_quat_body_to_ned(attitude_body);
-    Vector3f airspeed_earth_ned = _ahrs->airspeed_vector();
-    // Vector3f airspeed_body_ned = _ahrs->earth_to_body(airspeed_earth_ned);
+    
 
     Vector3f gyro_latest = _ahrs->get_gyro_latest();
-    // attitude_target = _att_control->get_attitude_target_quat();
+    attitude_target = _att_control->get_attitude_target_quat();
 
-    // This vector represents the angular error to rotate the thrust vector using x and y and heading using z
-    // Vector3f attitude_error;
-    // float _thrust_angle, _thrust_error_angle;
-    // _att_control->thrust_heading_rotation_angles(attitude_target, attitude_body, attitude_error, _thrust_angle, _thrust_error_angle);
+    float error_angle_enu_roll = attitude_target.get_euler_pitch()-attitude_body.get_euler_pitch();
+    float error_angle_enu_pitch = attitude_target.get_euler_roll()-attitude_body.get_euler_roll();
+    float error_angle_enu_yaw = -(attitude_target.get_euler_yaw()-attitude_body.get_euler_yaw());
 
-    // recalculate ang vel feedforward from attitude target model
-    // rotation from the target frame to the body frame
-    // Quaternion rotation_target_to_body = attitude_body.inverse() * attitude_target;
-    // target angle velocity vector in the body frame
-    // Vector3f ang_vel_body_feedforward = rotation_target_to_body * _att_control->get_attitude_target_ang_vel();
+    error_angle_enu_roll=mapAngleToRange(error_angle_enu_roll);
+    error_angle_enu_pitch=mapAngleToRange(error_angle_enu_pitch);
+    error_angle_enu_yaw=mapAngleToRange(error_angle_enu_yaw);
+
+    // Vector3f airspeed_earth_ned = _ahrs->airspeed_vector();
+    // Vector3f airspeed_body_ned = _ahrs->earth_to_body(airspeed_earth_ned);
 
     // ###### Prepare NN input ######
     // Note: Sensor: NED coordinate wxyz; NN input: ENU coordinate xyzw
-    // rb_quat
-    std::vector<float> q_enu = {attitude_body[0], attitude_body[2], attitude_body[1], -attitude_body[3]}; 
-    NN::OBS[0] = q_enu[1];
-    NN::OBS[1] = q_enu[2];
-    NN::OBS[2] = q_enu[3];
-    NN::OBS[3] = q_enu[0];
+    // angle
 
-    // angvel 
+    std::vector<float> error_angle = {error_angle_enu_roll, error_angle_enu_pitch, error_angle_enu_yaw};
+    NN::OBS[0] = error_angle[0]/PI;
+    NN::OBS[1] = error_angle[1]/PI;
+    NN::OBS[2] = error_angle[2]/PI;
+
+    // angular velocity
     Vector3f rb_ned_angvel = gyro_latest/NN::AVEL_LIM;
-    NN::OBS[4] = rb_ned_angvel[1];
-    NN::OBS[5] = rb_ned_angvel[0];
-    NN::OBS[6] = -rb_ned_angvel[2];
-
-    // rbvel 
-    Vector3f rb_ned_vel = airspeed_earth_ned/NN::VEL_LIM;
-    NN::OBS[7] = rb_ned_vel[1];
-    NN::OBS[8] = rb_ned_vel[0];
-    NN::OBS[9] = -rb_ned_vel[2];
+    NN::OBS[3] = rb_ned_angvel[1];
+    NN::OBS[4] = rb_ned_angvel[0];
+    NN::OBS[5] = -rb_ned_angvel[2];
 
     // ###### Inference Starts ######
     // auto t1 = high_resolution_clock::now();
@@ -116,28 +110,26 @@ Vector3f AC_CustomControl_XYZ::update(void)
     // ###### Inference Ends ######
 
     // include action to the observations
-    NN::OBS[10] = NN_out[0];
-    NN::OBS[11] = NN_out[1];
-    // NN::OBS[12] = NN_out[2];
+    NN::OBS[6] = NN_out[0];
+    NN::OBS[7] = NN_out[1];
+    NN::OBS[8] = NN_out[2];
     fifoBuffer.insert(NN::OBS); 
 
     // return what arducopter main controller outputted
     Vector3f motor_out;
     motor_out.x = authority*NN_out[1];
     motor_out.y = authority*NN_out[0];
-    // motor_out.z = -authority*NN_out[2];
+    motor_out.z = -authority*NN_out[2];
 
-    // motor_out.x = 1;
-    // motor_out.y = 1;
-    motor_out.z = 0;
+    // motor_out.x = 0;
+    // motor_out.y = 0;
+    // motor_out.z = 0;
 
     // ###### Printing ######
 
     // printing the obseravtions
-    // std::vector<float> vec = {NN::OBS[0], NN::OBS[1], NN::OBS[2], NN::OBS[3]}; 
-    // std::vector<float> vec = {NN::OBS[7], NN::OBS[8], NN::OBS[9]}; 
-    // std::string print_Str = vectorToString(vec);
-    // GCS_SEND_TEXT(MAV_SEVERITY_INFO, "obs: %s", print_Str.c_str());
+    std::string print_Str = vectorToString(error_angle);
+    GCS_SEND_TEXT(MAV_SEVERITY_INFO, "error angle: %s", print_Str.c_str());
 
     // printing the output of the Network
     // std::string NN_outStr = vectorToString(NN_out);
