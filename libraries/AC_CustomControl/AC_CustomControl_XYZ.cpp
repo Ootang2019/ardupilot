@@ -10,12 +10,14 @@
 #include "FIFOBuffer.h"
 #include "NN_Parameters.h"
 
+const float PI = 3.14159265358979323846;
+
+bool adaptor_initialized=false;
+int adaptor_counter=0;
+int ADAPTOR_FREQ=1;
+std::vector<float> latent_z(NN::N_LATENT, 0.0);
 
 FIFOBuffer fifoBuffer(NN::N_STACK);
-int adaptor_counter=0;
-int ADAPTOR_FREQ=4;
-std::vector<float> latent_z(NN::N_LATENT, 0.0);
-const float PI = 3.14159265358979323846;
 
 // table of user settable parameters
 const AP_Param::GroupInfo AC_CustomControl_XYZ::var_info[] = {
@@ -35,7 +37,7 @@ AC_CustomControl_XYZ::AC_CustomControl_XYZ(AC_CustomControl &frontend, AP_AHRS_V
     for (int i = 0; i < NN::N_STACK; ++i){
         fifoBuffer.insert(zeros_state);
     }
-    latent_z = forward_adaptor();
+    // latent_z = forward_adaptor();
 
     AP_Param::setup_object_defaults(this, var_info);
 }
@@ -68,31 +70,48 @@ Vector3f AC_CustomControl_XYZ::update(void)
     Vector3f gyro_latest = _ahrs->get_gyro_latest();
     attitude_target = _att_control->get_attitude_target_quat();
 
-    float error_angle_enu_roll = attitude_target.get_euler_pitch()-attitude_body.get_euler_pitch();
-    float error_angle_enu_pitch = attitude_target.get_euler_roll()-attitude_body.get_euler_roll();
-    float error_angle_enu_yaw = -(attitude_target.get_euler_yaw()-attitude_body.get_euler_yaw());
+    float rb_angle_enu_roll = attitude_body.get_euler_pitch();
+    float rb_angle_enu_pitch = attitude_body.get_euler_roll();
+    float rb_angle_enu_yaw = -attitude_body.get_euler_yaw();
 
-    error_angle_enu_roll=mapAngleToRange(error_angle_enu_roll);
-    error_angle_enu_pitch=mapAngleToRange(error_angle_enu_pitch);
-    error_angle_enu_yaw=mapAngleToRange(error_angle_enu_yaw);
+    rb_angle_enu_roll = mapAngleToRange(rb_angle_enu_roll);
+    rb_angle_enu_pitch = mapAngleToRange(rb_angle_enu_pitch);
+    rb_angle_enu_yaw = mapAngleToRange(rb_angle_enu_yaw);
+
+    float target_angle_enu_roll = attitude_target.get_euler_pitch();
+    float target_angle_enu_pitch = attitude_target.get_euler_roll();
+    float target_angle_enu_yaw = -attitude_target.get_euler_yaw();
+
+    float error_angle_enu_roll = target_angle_enu_roll-rb_angle_enu_roll;
+    float error_angle_enu_pitch = target_angle_enu_pitch-rb_angle_enu_pitch;
+    float error_angle_enu_yaw = target_angle_enu_yaw-rb_angle_enu_yaw;
+
+    error_angle_enu_roll = mapAngleToRange(error_angle_enu_roll);
+    error_angle_enu_pitch = mapAngleToRange(error_angle_enu_pitch);
+    error_angle_enu_yaw = mapAngleToRange(error_angle_enu_yaw);
 
     // Vector3f airspeed_earth_ned = _ahrs->airspeed_vector();
     // Vector3f airspeed_body_ned = _ahrs->earth_to_body(airspeed_earth_ned);
 
     // ###### Prepare NN input ######
-    // Note: Sensor: NED coordinate wxyz; NN input: ENU coordinate xyzw
+    // Note: Sensor: NED coordinate; NN input: ENU coordinate
     // angle
+    std::vector<float> angle = {rb_angle_enu_roll, rb_angle_enu_pitch, rb_angle_enu_yaw};
+    NN::OBS[0] = angle[0];
+    NN::OBS[1] = angle[1];
+    NN::OBS[2] = angle[2];
 
+    // error angle
     std::vector<float> error_angle = {error_angle_enu_roll, error_angle_enu_pitch, error_angle_enu_yaw};
-    NN::OBS[0] = error_angle[0]/PI;
-    NN::OBS[1] = error_angle[1]/PI;
-    NN::OBS[2] = error_angle[2]/PI;
+    NN::OBS[3] = error_angle[0]/PI;
+    NN::OBS[4] = error_angle[1]/PI;
+    NN::OBS[5] = error_angle[2]/PI;
 
     // angular velocity
     Vector3f rb_ned_angvel = gyro_latest/NN::AVEL_LIM;
-    NN::OBS[3] = rb_ned_angvel[1];
-    NN::OBS[4] = rb_ned_angvel[0];
-    NN::OBS[5] = -rb_ned_angvel[2];
+    NN::OBS[6] = rb_ned_angvel[1];
+    NN::OBS[7] = rb_ned_angvel[0];
+    NN::OBS[8] = -rb_ned_angvel[2];
 
     // ###### Inference Starts ######
     // auto t1 = high_resolution_clock::now();
@@ -101,6 +120,7 @@ Vector3f AC_CustomControl_XYZ::update(void)
     if (adaptor_counter>=ADAPTOR_FREQ){
         latent_z = forward_adaptor();
         adaptor_counter = 0;
+        adaptor_initialized = true;
     }
 
     std::vector<float> NN_out = forward_policy(NN::OBS, latent_z);
@@ -110,26 +130,42 @@ Vector3f AC_CustomControl_XYZ::update(void)
     // ###### Inference Ends ######
 
     // include action to the observations
-    NN::OBS[6] = NN_out[0];
-    NN::OBS[7] = NN_out[1];
-    NN::OBS[8] = NN_out[2];
-    fifoBuffer.insert(NN::OBS); 
 
     // return what arducopter main controller outputted
     Vector3f motor_out;
-    motor_out.x = authority*NN_out[1];
-    motor_out.y = authority*NN_out[0];
-    motor_out.z = -authority*NN_out[2];
+    if (adaptor_initialized==true){
+        motor_out.x = authority*NN_out[1];
+        motor_out.y = authority*NN_out[0];
+        motor_out.z = -authority*NN_out[2];
+
+        NN::OBS[9] = NN_out[0];
+        NN::OBS[10] = NN_out[1];
+        NN::OBS[11] = NN_out[2];
+    }
+    else{
+        motor_out.x = 0;
+        motor_out.y = 0;
+        motor_out.z = 0;
+
+        NN::OBS[9] = 0;
+        NN::OBS[10] = 0;
+        NN::OBS[11] = 0;
+    }
+
+    fifoBuffer.insert(NN::OBS); 
 
     // motor_out.x = 0;
     // motor_out.y = 0;
     // motor_out.z = 0;
+    // NN::OBS[9] = 0;
+    // NN::OBS[10] = 0;
+    // NN::OBS[11] = 0;
 
     // ###### Printing ######
 
     // printing the obseravtions
-    std::string print_Str = vectorToString(error_angle);
-    GCS_SEND_TEXT(MAV_SEVERITY_INFO, "error angle: %s", print_Str.c_str());
+    // std::string print_Str = vectorToString(error_angle);
+    // GCS_SEND_TEXT(MAV_SEVERITY_INFO, "error angle: %s", print_Str.c_str());
 
     // printing the output of the Network
     // std::string NN_outStr = vectorToString(NN_out);
@@ -200,9 +236,9 @@ void AC_CustomControl_XYZ::reset(void)
     for (int i = 0; i < NN::N_STACK; ++i){
         fifoBuffer.insert(zero_state);
     }
-    latent_z = forward_adaptor();
 
     adaptor_counter = 0;
+    adaptor_initialized = false;
 }
 
 // #endif  // AP_CUSTOMCONTROL_EMPTY_ENABLED
