@@ -195,6 +195,8 @@ std::vector<float> AC_CustomControl_XYZ::forward_adaptor(void)
 
     std::vector<float> z_tmp = getLastColumn(x_tmp2);
     std::vector<float> z = linear_layer(NN::CNN_LB, NN::CNN_LW, z_tmp, false);
+    z = linear_layer(NN::CNN_LIN_B, NN::CNN_LIN_W, z, false);
+    z = linear_layer(NN::CNN_LOUT_B, NN::CNN_LOUT_W, z, false);
     assert(z.size() == NN::N_LATENT);
 
     return z;
@@ -216,7 +218,7 @@ std::vector<float> AC_CustomControl_XYZ::forward_policy(std::vector<float> state
     // composition layers
     std::vector<float> NN_out;
     NN_out = composition_layer(NN::LIN_W, NN::LIN_B, w, obs, true);
-    NN_out = composition_layer(NN::L0_W, NN::L0_B, w, NN_out, true);
+    // NN_out = composition_layer(NN::L0_W, NN::L0_B, w, NN_out, true);
 
     // output layer
     std::vector<std::vector<float>> empty_bias;
