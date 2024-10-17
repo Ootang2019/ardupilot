@@ -97,9 +97,9 @@ Vector3f AC_CustomControl_XYZ::update(void)
     // Note: Sensor: NED coordinate; NN input: ENU coordinate
     // angle
     std::vector<float> angle = {rb_angle_enu_roll, rb_angle_enu_pitch, rb_angle_enu_yaw};
-    NN::OBS[0] = angle[0];
-    NN::OBS[1] = angle[1];
-    NN::OBS[2] = angle[2];
+    NN::OBS[0] = angle[0]/PI;
+    NN::OBS[1] = angle[1]/PI;
+    NN::OBS[2] = angle[2]/PI;
 
     // error angle
     std::vector<float> error_angle = {error_angle_enu_roll, error_angle_enu_pitch, error_angle_enu_yaw};
