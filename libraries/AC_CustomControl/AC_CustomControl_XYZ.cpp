@@ -14,8 +14,9 @@ const float PI = 3.14159265358979323846;
 
 bool adaptor_initialized=false;
 int adaptor_counter=0;
-int ADAPTOR_FREQ=1;
+int ADAPTOR_FREQ=4;
 std::vector<float> latent_z(NN::N_LATENT, 0.0);
+std::vector<float> NN_out(NN::N_ACT, 0.0);
 
 FIFOBuffer fifoBuffer(NN::N_STACK);
 
@@ -100,13 +101,11 @@ Vector3f AC_CustomControl_XYZ::update(void)
     NN::OBS[0] = angle[0]/PI;
     NN::OBS[1] = angle[1]/PI;
     NN::OBS[2] = angle[2]/PI;
-
     // error angle
     std::vector<float> error_angle = {error_angle_enu_roll, error_angle_enu_pitch, error_angle_enu_yaw};
     NN::OBS[3] = error_angle[0]/PI;
     NN::OBS[4] = error_angle[1]/PI;
     NN::OBS[5] = error_angle[2]/PI;
-
     // angular velocity
     Vector3f rb_ned_angvel = gyro_latest/NN::AVEL_LIM;
     NN::OBS[6] = rb_ned_angvel[1];
@@ -121,17 +120,19 @@ Vector3f AC_CustomControl_XYZ::update(void)
         latent_z = forward_adaptor();
         adaptor_counter = 0;
         adaptor_initialized = true;
+        NN_out = forward_policy(NN::OBS, latent_z);
     }
-
-    std::vector<float> NN_out = forward_policy(NN::OBS, latent_z);
+    // std::vector<float> NN_out = forward_policy(NN::OBS, latent_z);
 
     // auto t2 = high_resolution_clock::now();
 
     // ###### Inference Ends ######
 
+
     // include action to the observations
 
     // return what arducopter main controller outputted
+
     Vector3f motor_out;
     if (adaptor_initialized==true){
         motor_out.x = authority*NN_out[1];
@@ -151,15 +152,14 @@ Vector3f AC_CustomControl_XYZ::update(void)
         NN::OBS[10] = 0;
         NN::OBS[11] = 0;
     }
-
     fifoBuffer.insert(NN::OBS); 
 
-    // motor_out.x = 0;
-    // motor_out.y = 0;
-    // motor_out.z = 0;
-    // NN::OBS[9] = 0;
-    // NN::OBS[10] = 0;
-    // NN::OBS[11] = 0;
+    motor_out.x = 0;
+    motor_out.y = 0;
+    motor_out.z = 0;
+    NN::OBS[9] = 0;
+    NN::OBS[10] = 0;
+    NN::OBS[11] = 0;
 
     // ###### Printing ######
 
@@ -195,7 +195,7 @@ std::vector<float> AC_CustomControl_XYZ::forward_adaptor(void)
 
     std::vector<float> z_tmp = getLastColumn(x_tmp2);
     std::vector<float> z = linear_layer(NN::CNN_LB, NN::CNN_LW, z_tmp, false);
-    z = linear_layer(NN::CNN_LIN_B, NN::CNN_LIN_W, z, false);
+    z = linear_layer(NN::CNN_LIN_B, NN::CNN_LIN_W, z, true);
     z = linear_layer(NN::CNN_LOUT_B, NN::CNN_LOUT_W, z, false);
     assert(z.size() == NN::N_LATENT);
 
@@ -216,17 +216,17 @@ std::vector<float> AC_CustomControl_XYZ::forward_policy(std::vector<float> state
     assert(w.size() == NN::N_CONTEXT);
 
     // composition layers
-    std::vector<float> NN_out;
-    NN_out = composition_layer(NN::LIN_W, NN::LIN_B, w, obs, true);
-    // NN_out = composition_layer(NN::L0_W, NN::L0_B, w, NN_out, true);
+    std::vector<float> x;
+    x = composition_layer(NN::LIN_W, NN::LIN_B, w, obs, true);
+    // x = composition_layer(NN::L0_W, NN::L0_B, w, x, true);
 
     // output layer
     std::vector<std::vector<float>> empty_bias;
-    NN_out = composition_layer(NN::MEAN_W, empty_bias, w, NN_out, false);
-    clampToRange(NN_out, -1, 1);
-    assert(NN_out.size() == NN::N_ACT);
+    x = composition_layer(NN::MEAN_W, empty_bias, w, x, false);
+    clampToRange(x, -1, 1);
+    assert(x.size() == NN::N_ACT);
 
-    return NN_out;
+    return x;
 }
 
 // reset controller to avoid build up on the ground
