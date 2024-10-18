@@ -193,13 +193,13 @@ std::vector<float> AC_CustomControl_XYZ::forward_adaptor(void)
     x_tmp2 = vec2DAdd(x_tmp2, table);
     std::vector<std::vector<float>> x = relu2D(x_tmp2);
 
-    if (NN::N_TCN_LAYER>1) {
-        x_tmp1 = conv1d(x, NN::CNN_W2, NN::CNN_B2, 1, NN::N_PADD*2, 2);
-        x_tmp2 = chomp1d(x_tmp1, NN::N_PADD*2);
-        x_tmp2 = relu2D(x_tmp2);
-        x = vec2DAdd(x_tmp2, x);
-        x = relu2D(x);
-    }
+    // if (NN::N_TCN_LAYER>1) {
+    //     x_tmp1 = conv1d(x, NN::CNN_W2, NN::CNN_B2, 1, NN::N_PADD*2, 2);
+    //     x_tmp2 = chomp1d(x_tmp1, NN::N_PADD*2);
+    //     x_tmp2 = relu2D(x_tmp2);
+    //     x = vec2DAdd(x_tmp2, x);
+    //     x = relu2D(x);
+    // }
 
     std::vector<float> z_tmp = getLastColumn(x);
     std::vector<float> z = linear_layer(NN::CNN_LB, NN::CNN_LW, z_tmp, false);
