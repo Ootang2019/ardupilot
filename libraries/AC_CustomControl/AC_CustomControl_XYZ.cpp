@@ -38,7 +38,6 @@ AC_CustomControl_XYZ::AC_CustomControl_XYZ(AC_CustomControl &frontend, AP_AHRS_V
     for (int i = 0; i < NN::N_STACK; ++i){
         fifoBuffer.insert(zeros_state);
     }
-    // latent_z = forward_adaptor();
 
     AP_Param::setup_object_defaults(this, var_info);
 }
@@ -66,10 +65,17 @@ Vector3f AC_CustomControl_XYZ::update(void)
 
     Quaternion attitude_body, attitude_target;
     _ahrs->get_quat_body_to_ned(attitude_body);
-    
 
     Vector3f gyro_latest = _ahrs->get_gyro_latest();
     attitude_target = _att_control->get_attitude_target_quat();
+
+    // Vector3f attitude_error;
+    // float _thrust_angle, _thrust_error_angle;
+    // _att_control->thrust_heading_rotation_angles(attitude_target, attitude_body, attitude_error, _thrust_angle, _thrust_error_angle);
+
+    // std::vector<float> error_angle0 = {attitude_error.y, attitude_error.x, -attitude_error.z};
+    // std::string print_Str = vectorToString(error_angle0);
+    // GCS_SEND_TEXT(MAV_SEVERITY_INFO, "ar error angle: %s", print_Str.c_str());
 
     float rb_angle_enu_roll = attitude_body.get_euler_pitch();
     float rb_angle_enu_pitch = attitude_body.get_euler_roll();
@@ -90,6 +96,11 @@ Vector3f AC_CustomControl_XYZ::update(void)
     error_angle_enu_roll = mapAngleToRange(error_angle_enu_roll);
     error_angle_enu_pitch = mapAngleToRange(error_angle_enu_pitch);
     error_angle_enu_yaw = mapAngleToRange(error_angle_enu_yaw);
+
+
+    // std::vector<float> error_angle1 = {error_angle_enu_roll, error_angle_enu_pitch, error_angle_enu_yaw};
+    // print_Str = vectorToString(error_angle1);
+    // GCS_SEND_TEXT(MAV_SEVERITY_INFO, "my error angle: %s", print_Str.c_str());
 
     // Vector3f airspeed_earth_ned = _ahrs->airspeed_vector();
     // Vector3f airspeed_body_ned = _ahrs->earth_to_body(airspeed_earth_ned);
@@ -153,13 +164,6 @@ Vector3f AC_CustomControl_XYZ::update(void)
         NN::OBS[11] = 0;
     }
     fifoBuffer.insert(NN::OBS); 
-
-    motor_out.x = 0;
-    motor_out.y = 0;
-    motor_out.z = 0;
-    NN::OBS[9] = 0;
-    NN::OBS[10] = 0;
-    NN::OBS[11] = 0;
 
     // ###### Printing ######
 
