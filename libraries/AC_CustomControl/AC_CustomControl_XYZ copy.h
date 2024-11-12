@@ -10,7 +10,8 @@ public:
     void reset(void) override;
     static const struct AP_Param::GroupInfo var_info[];
 
-    std::vector<float> forward_policy(std::vector<float>);
+    std::vector<float> forward_adaptor(void);
+    std::vector<float> forward_policy(std::vector<float>, std::vector<float>);
 
 protected:
 	AP_Float authority;
