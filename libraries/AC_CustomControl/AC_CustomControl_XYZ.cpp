@@ -148,10 +148,10 @@ Vector3f AC_CustomControl_XYZ::update(void)
     return motor_out;
 }
 
-std::vector<float> AC_CustomControl_XYZ::forward_policy(std::vector<float> state, std::vector<float> z)
+std::vector<float> AC_CustomControl_XYZ::forward_policy(std::vector<float> state)
 {
     // policy start here
-    std::vector<float> obs = vecCat(state, z);
+    std::vector<float> obs = state;
     std::vector<float> context_input = vecCat(obs, NN::TASK);
 
     // context encoder

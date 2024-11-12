@@ -172,3 +172,5 @@ env.bak/
 venv.bak/
 autotest_result_*_junit.xml
 *.out
+libraries/AC_CustomControl/AC_CustomControl_XYZ_tmp.cpp
+libraries/AC_CustomControl/AC_CustomControl_XYZ_tmp.h
