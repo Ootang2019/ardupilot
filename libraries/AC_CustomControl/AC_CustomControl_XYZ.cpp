@@ -122,13 +122,13 @@ Vector3f AC_CustomControl_XYZ::update(void)
     Vector3f motor_out;
     motor_out.x = authority*NN_out[1];
     motor_out.y = authority*NN_out[0];
-    // motor_out.z = -authority*NN_out[2];
-    motor_out.z = 0;
+    motor_out.z = -authority*NN_out[2];
+    // motor_out.z = 0;
 
     NN::OBS[9] = NN_out[0];
     NN::OBS[10] = NN_out[1];
-    // NN::OBS[11] = NN_out[2];
-    NN::OBS[11] = 0;
+    NN::OBS[11] = NN_out[2];
+    // NN::OBS[11] = 0;
 
     // ###### Printing ######
 
