@@ -79,7 +79,7 @@ Vector3f AC_CustomControl_XYZ::update(void)
     error_angle_enu_pitch = mapAngleToRange(error_angle_enu_pitch);
     error_angle_enu_yaw = mapAngleToRange(error_angle_enu_yaw);
 
-    // Vector3f airspeed_earth_ned = _ahrs->airspeed_vector();
+    Vector3f airspeed_earth_ned = _ahrs->airspeed_vector();
     // Vector3f airspeed_body_ned = _ahrs->earth_to_body(airspeed_earth_ned);
 
     // ###### Prepare NN input ######
@@ -99,6 +99,11 @@ Vector3f AC_CustomControl_XYZ::update(void)
     NN::OBS[6] = rb_ned_angvel[1];
     NN::OBS[7] = rb_ned_angvel[0];
     NN::OBS[8] = -rb_ned_angvel[2];
+
+    Vector3f rb_ned_vel = airspeed_earth_ned/NN::VEL_LIM;
+    NN::OBS[9] = rb_ned_vel[1];
+    NN::OBS[10] = rb_ned_vel[0];
+    NN::OBS[11] = -rb_ned_vel[2];
 
     // ###### Inference Starts ######
     // auto t1 = high_resolution_clock::now();
@@ -125,9 +130,9 @@ Vector3f AC_CustomControl_XYZ::update(void)
     motor_out.z = -authority*NN_out[2];
     // motor_out.z = 0;
 
-    NN::OBS[9] = NN_out[0];
-    NN::OBS[10] = NN_out[1];
-    NN::OBS[11] = NN_out[2];
+    NN::OBS[12] = NN_out[0];
+    NN::OBS[13] = NN_out[1];
+    NN::OBS[14] = NN_out[2];
     // NN::OBS[11] = 0;
 
     // ###### Printing ######
