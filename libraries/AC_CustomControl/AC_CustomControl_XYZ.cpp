@@ -138,8 +138,8 @@ Vector3f AC_CustomControl_XYZ::update(void)
     // ###### Printing ######
 
     // printing the obseravtions
-    // std::string print_Str = vectorToString(error_angle);
-    // GCS_SEND_TEXT(MAV_SEVERITY_INFO, "error angle: %s", print_Str.c_str());
+    std::string print_Str = vectorToString(error_angle);
+    GCS_SEND_TEXT(MAV_SEVERITY_INFO, "error angle: %s", print_Str.c_str());
 
     // printing the output of the Network
     // std::string NN_outStr = vectorToString(NN_out);
