@@ -3,7 +3,7 @@
 #include "AC_CustomControl_Backend.h"
 #include <vector>
 
-class AC_CustomControl_XYZ : public AC_CustomControl_Backend {
+class AC_CustomControl_MTSAC : public AC_CustomControl_Backend {
 private:
     int policy_counter = 0;
     int adaptor_counter = 0;
@@ -21,7 +21,7 @@ private:
 
 public:
     // Constructor
-    AC_CustomControl_XYZ(AC_CustomControl &frontend, AP_AHRS_View *&ahrs, AC_AttitudeControl *&att_control, 
+    AC_CustomControl_MTSAC(AC_CustomControl &frontend, AP_AHRS_View *&ahrs, AC_AttitudeControl *&att_control, 
                          AP_MotorsMulticopter *&motors, float dt);
 
     // Public methods

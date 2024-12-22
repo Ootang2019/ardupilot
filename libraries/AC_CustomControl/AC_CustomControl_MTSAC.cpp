@@ -2,7 +2,7 @@
 
 // #if AP_CUSTOMCONTROL_EMPTY_ENABLED
 
-#include "AC_CustomControl_XYZ.h"
+#include "AC_CustomControl_MTSAC.h"
 #include <GCS_MAVLink/GCS.h>
 #include <vector>
 
@@ -11,12 +11,12 @@
 #include "NN_Parameters.h"
 
 // Initialize the class
-AC_CustomControl_XYZ::AC_CustomControl_XYZ(AC_CustomControl &frontend, AP_AHRS_View *&ahrs, 
+AC_CustomControl_MTSAC::AC_CustomControl_MTSAC(AC_CustomControl &frontend, AP_AHRS_View *&ahrs, 
                                            AC_AttitudeControl *&att_control, AP_MotorsMulticopter *&motors, float dt)
     : AC_CustomControl_Backend(frontend, ahrs, att_control, motors, dt), 
       fifoBuffer(NN::N_STACK), latent_z(NN::N_LATENT, 0.0), NN_out(NN::N_ACT, 0.0)
 {
-    AP_Param::setup_object_defaults(this, AC_CustomControl_XYZ::var_info);
+    AP_Param::setup_object_defaults(this, AC_CustomControl_MTSAC::var_info);
 
     if (NN::USE_ADAPTOR) {
         resetAdaptorBuffer();
@@ -24,7 +24,7 @@ AC_CustomControl_XYZ::AC_CustomControl_XYZ(AC_CustomControl &frontend, AP_AHRS_V
 }
 
 // Reset buffer for the adaptor
-void AC_CustomControl_XYZ::resetAdaptorBuffer() {
+void AC_CustomControl_MTSAC::resetAdaptorBuffer() {
     std::vector<float> zeros_state(NN::N_OBS, 0.0);
     for (int i = 0; i < NN::N_STACK; ++i) {
         fifoBuffer.insert(zeros_state);
@@ -32,7 +32,7 @@ void AC_CustomControl_XYZ::resetAdaptorBuffer() {
 }
 
 // Handle spool state and reset controller if needed
-void AC_CustomControl_XYZ::handleSpoolState() {
+void AC_CustomControl_MTSAC::handleSpoolState() {
     switch (_motors->get_spool_state()) {
         case AP_Motors::SpoolState::SHUT_DOWN:
         case AP_Motors::SpoolState::GROUND_IDLE:
@@ -46,7 +46,7 @@ void AC_CustomControl_XYZ::handleSpoolState() {
 }
 
 // Update NN input and handle state
-void AC_CustomControl_XYZ::updateNNInput(const Vector3f& attitude_body, const Vector3f& gyro_latest, 
+void AC_CustomControl_MTSAC::updateNNInput(const Vector3f& attitude_body, const Vector3f& gyro_latest, 
                                           const Vector3f& airspeed_earth_ned) {
     // Convert angles to NED
     float rb_angle_enu_roll = attitude_body.get_euler_pitch();
@@ -74,7 +74,7 @@ void AC_CustomControl_XYZ::updateNNInput(const Vector3f& attitude_body, const Ve
 }
 
 // Update the controller and return the output
-Vector3f AC_CustomControl_XYZ::update(void) {
+Vector3f AC_CustomControl_MTSAC::update(void) {
     handleSpoolState();
 
     Quaternion attitude_body, attitude_target;
@@ -138,7 +138,7 @@ Vector3f AC_CustomControl_XYZ::update(void) {
 }
 
 // Reset the controller to avoid build up or ensure bumpless transfer
-void AC_CustomControl_XYZ::reset(void) {
+void AC_CustomControl_MTSAC::reset(void) {
     policy_counter = 0;
     if (NN::USE_ADAPTOR) {
         resetAdaptorBuffer();
@@ -147,7 +147,7 @@ void AC_CustomControl_XYZ::reset(void) {
 }
 
 // Policy forward pass
-std::vector<float> AC_CustomControl_XYZ::forward_policy(const std::vector<float>& state) {
+std::vector<float> AC_CustomControl_MTSAC::forward_policy(const std::vector<float>& state) {
     std::vector<float> context_input = vecCat(state, NN::TASK);
     std::vector<float> w = linear_layer(NN::WIN_B, NN::WIN_W, context_input, true);
     w = linear_layer(NN::WOUT_B, NN::WOUT_W, w, false);
@@ -161,7 +161,7 @@ std::vector<float> AC_CustomControl_XYZ::forward_policy(const std::vector<float>
 }
 
 // Adaptive policy forward pass
-std::vector<float> AC_CustomControl_XYZ::forward_adaptive_policy(const std::vector<float>& state, const std::vector<float>& z) {
+std::vector<float> AC_CustomControl_MTSAC::forward_adaptive_policy(const std::vector<float>& state, const std::vector<float>& z) {
     std::vector<float> context_input = vecCat(state, z);
     std::vector<float> w = linear_layer(NN::WIN_B, NN::WIN_W, context_input, true);
     w = linear_layer(NN::WOUT_B, NN::WOUT_W, w, false);
@@ -175,7 +175,7 @@ std::vector<float> AC_CustomControl_XYZ::forward_adaptive_policy(const std::vect
 }
 
 // Adaptor forward pass
-std::vector<float> AC_CustomControl_XYZ::forward_adaptor(void) {
+std::vector<float> AC_CustomControl_MTSAC::forward_adaptor(void) {
     std::vector<std::vector<float>> table = fifoBuffer.getTransposedTable();
     std::vector<std::vector<float>> x_tmp1 = conv1d(table, NN::CNN_W1, NN::CNN_B1, 1, NN::N_PADD, 1);
     std::vector<std::vector<float>> x_tmp2 = chomp1d(x_tmp1, NN::N_PADD);
@@ -202,17 +202,17 @@ std::vector<float> AC_CustomControl_XYZ::forward_adaptor(void) {
 ////////////////////////////////////////////////////////////
 
 // table of user settable parameters
-// const AP_Param::GroupInfo AC_CustomControl_XYZ::var_info[] = {
+// const AP_Param::GroupInfo AC_CustomControl_MTSAC::var_info[] = {
 //     // @Param: PARAM1
-//     // @DisplayName: XYZ param1
+//     // @DisplayName: MTSAC param1
 //     // @Description: Dummy parameter for empty custom controller backend
 //     // @User: Advanced
-//     AP_GROUPINFO("AUTHORITY", 1, AC_CustomControl_XYZ, authority, NN::AUTHORITY),
+//     AP_GROUPINFO("AUTHORITY", 1, AC_CustomControl_MTSAC, authority, NN::AUTHORITY),
 
 //     AP_GROUPEND};
 
 // // initialize in the constructor
-// AC_CustomControl_XYZ::AC_CustomControl_XYZ(AC_CustomControl &frontend, AP_AHRS_View *&ahrs, AC_AttitudeControl *&att_control, AP_MotorsMulticopter *&motors, float dt) : AC_CustomControl_Backend(frontend, ahrs, att_control, motors, dt)
+// AC_CustomControl_MTSAC::AC_CustomControl_MTSAC(AC_CustomControl &frontend, AP_AHRS_View *&ahrs, AC_AttitudeControl *&att_control, AP_MotorsMulticopter *&motors, float dt) : AC_CustomControl_Backend(frontend, ahrs, att_control, motors, dt)
 // {
 //     AP_Param::setup_object_defaults(this, var_info);
 
@@ -228,7 +228,7 @@ std::vector<float> AC_CustomControl_XYZ::forward_adaptor(void) {
 
 // // update controller
 // // return roll, pitch, yaw controller output
-// Vector3f AC_CustomControl_XYZ::update(void)
+// Vector3f AC_CustomControl_MTSAC::update(void)
 // {
 //     // reset controller based on spool state
 //     switch (_motors->get_spool_state())
@@ -364,7 +364,7 @@ std::vector<float> AC_CustomControl_XYZ::forward_adaptor(void) {
 
 // // reset controller to avoid build up on the ground
 // // or to provide bumpless transfer from arducopter main controller
-// void AC_CustomControl_XYZ::reset(void)
+// void AC_CustomControl_MTSAC::reset(void)
 // {
 //     policy_counter = 0;
 
@@ -380,7 +380,7 @@ std::vector<float> AC_CustomControl_XYZ::forward_adaptor(void) {
 // }
 
 
-// std::vector<float> AC_CustomControl_XYZ::forward_policy(std::vector<float> state)
+// std::vector<float> AC_CustomControl_MTSAC::forward_policy(std::vector<float> state)
 // {
 //     // policy start here
 //     std::vector<float> obs = state;
@@ -406,7 +406,7 @@ std::vector<float> AC_CustomControl_XYZ::forward_adaptor(void) {
 //     return x;
 // }
 
-// std::vector<float> AC_CustomControl_XYZ::forward_adaptive_policy(std::vector<float> state, std::vector<float> z)
+// std::vector<float> AC_CustomControl_MTSAC::forward_adaptive_policy(std::vector<float> state, std::vector<float> z)
 // {
 //     // policy start here
 //     std::vector<float> obs = vecCat(state, z);
@@ -432,7 +432,7 @@ std::vector<float> AC_CustomControl_XYZ::forward_adaptor(void) {
 //     return x;
 // }
 
-// std::vector<float> AC_CustomControl_XYZ::forward_adaptor(void)
+// std::vector<float> AC_CustomControl_MTSAC::forward_adaptor(void)
 // {
 //     std::vector<std::vector<float>> table = fifoBuffer.getTransposedTable();
 //     assert(table.size() == NN::N_OBS);
