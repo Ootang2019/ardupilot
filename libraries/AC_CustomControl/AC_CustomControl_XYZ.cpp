@@ -219,9 +219,6 @@ std::vector<float> AC_CustomControl_XYZ::forward_policy(const std::vector<float>
     H_concat.insert(H_concat.end(), embed_task.begin(),   embed_task.end());
     H_concat.insert(H_concat.end(), embed_act.begin(),    embed_act.end());
 
-    std::string obsStr = vectorToString(NN_out);
-    GCS_SEND_TEXT(MAV_SEVERITY_INFO, "nnout: %s", obsStr.c_str());
-
     int num_obs_nodes    = NN::N_STATE + NN::N_GOAL + NN::N_TASK; // e.g. 16, S(6)+G(3)+T(7)
     int num_action_nodes = NN::N_ACT;                  // e.g. 3
     int total_nodes      = num_obs_nodes + num_action_nodes; // e.g. 19
