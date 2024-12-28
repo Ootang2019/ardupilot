@@ -4,13 +4,13 @@
 #define UTIL_H
 
 #include <vector>
-#include <string>
 
 // -------------------------------------------------
 // Existing utility function declarations
 // -------------------------------------------------
 
 // for printing
+#include <string>
 std::string vectorToString(const std::vector<float>& vec);
 
 // map angle to [-pi, pi]

@@ -1,5 +1,9 @@
 #include "AC_CustomControl_config.h"
-// #if AP_CUSTOMCONTROL_EMPTY_ENABLED
+
+// #if AP_CUSTOMCONTROL_XYZ_ENABLED
+
+// #include <sstream>
+// #include <iostream>
 
 #include "AC_CustomControl_XYZ.h"
 #include <GCS_MAVLink/GCS.h>
@@ -12,6 +16,10 @@
 #ifndef PI
 #define PI 3.14159265358979323846f
 #endif
+
+int policy_counter = 0;
+int POLICY_FREQ = 1;
+std::vector<float> NN_out={0.0,0.0,0.0};
 
 // table of user settable parameters
 const AP_Param::GroupInfo AC_CustomControl_XYZ::var_info[] = {
@@ -43,10 +51,12 @@ void AC_CustomControl_XYZ::handleSpoolState() {
 }
 
 // Update NN input and handle state
-void AC_CustomControl_XYZ::updateNNInput(const Vector3f& attitude_body,
+void AC_CustomControl_XYZ::updateNNInput(const Quaternion& attitude_body,
+                                         const Quaternion& attitude_target,
                                          const Vector3f& gyro_latest, 
                                          const Vector3f& airspeed_earth_ned) 
 {
+
     float rb_angle_enu_roll  = attitude_body.get_euler_pitch();
     float rb_angle_enu_pitch = attitude_body.get_euler_roll();
     float rb_angle_enu_yaw   = -attitude_body.get_euler_yaw();
@@ -55,20 +65,29 @@ void AC_CustomControl_XYZ::updateNNInput(const Vector3f& attitude_body,
     rb_angle_enu_pitch = mapAngleToRange(rb_angle_enu_pitch);
     rb_angle_enu_yaw   = mapAngleToRange(rb_angle_enu_yaw);
 
+    float target_angle_enu_roll  = attitude_target.get_euler_pitch();
+    float target_angle_enu_pitch = attitude_target.get_euler_roll();
+    float target_angle_enu_yaw   = -attitude_target.get_euler_yaw();
+
+    float error_angle_enu_roll  = mapAngleToRange(target_angle_enu_roll-rb_angle_enu_roll);
+    float error_angle_enu_pitch = mapAngleToRange(target_angle_enu_pitch-rb_angle_enu_pitch);
+    float error_angle_enu_yaw   = mapAngleToRange(target_angle_enu_yaw-rb_angle_enu_yaw);
+
+
     // Just store these in NN::OBS for now, or you might store them in a local vector
     NN::OBS[0] = rb_angle_enu_roll  / PI;
     NN::OBS[1] = rb_angle_enu_pitch / PI;
     NN::OBS[2] = rb_angle_enu_yaw   / PI;
 
     Vector3f rb_ned_angvel = gyro_latest / NN::AVEL_LIM;
-    NN::OBS[3] = rb_ned_angvel[0];
-    NN::OBS[4] = rb_ned_angvel[1];
-    NN::OBS[5] = rb_ned_angvel[2];
+    NN::OBS[3] = rb_ned_angvel[1];
+    NN::OBS[4] = rb_ned_angvel[0];
+    NN::OBS[5] = -rb_ned_angvel[2];
 
-    Vector3f rb_ned_vel = airspeed_earth_ned / NN::VEL_LIM;
-    NN::OBS[6]  = rb_ned_vel[0];
-    NN::OBS[7]  = rb_ned_vel[1];
-    NN::OBS[8]  = rb_ned_vel[2];
+    NN::OBS[9]  = error_angle_enu_roll / PI;
+    NN::OBS[10]  = error_angle_enu_pitch / PI;
+    NN::OBS[11]  = error_angle_enu_yaw / PI;
+
 }
 
 // Update the controller and return the output
@@ -80,34 +99,38 @@ Vector3f AC_CustomControl_XYZ::update(void) {
     Vector3f gyro_latest = _ahrs->get_gyro_latest();
     attitude_target = _att_control->get_attitude_target_quat();
 
-    // Just as an example, we can read out target euler if needed
-    float target_angle_enu_roll  = attitude_target.get_euler_pitch();
-    float target_angle_enu_pitch = attitude_target.get_euler_roll();
-    float target_angle_enu_yaw   = -attitude_target.get_euler_yaw();
-
-    updateNNInput(attitude_body, gyro_latest, _ahrs->airspeed_vector());
+    updateNNInput(attitude_body, attitude_target, gyro_latest, _ahrs->airspeed_vector());
 
     // forward pass
-    if (++policy_counter >= POLICY_FREQ) {
-        NN_out = forward_policy(NN::OBS); 
-        policy_counter = 0;
-    }
+    policy_counter += 1;
+    if (policy_counter >= POLICY_FREQ) {
+        policy_counter = 0;  // Reset the counter after performing the update
+        NN_out = forward_policy(NN::OBS);  
+    } 
+    // std::string obsStr = vectorToString(NN_out);
+    // GCS_SEND_TEXT(MAV_SEVERITY_INFO, "nnout: %s", obsStr.c_str());
+
+    NN::OBS[6] = NN_out[0];
+    NN::OBS[7] = NN_out[1];
+    NN::OBS[8] = NN_out[2];
+    // NN::OBS[8] = 0;
 
     // motor outputs
     Vector3f motor_out;
     motor_out.x = authority * NN_out[1];
     motor_out.y = authority * NN_out[0];
     motor_out.z = -authority * NN_out[2];
+    // motor_out.z = 0;
+
 
     // Debug info
-    std::string obsStr = vectorToString({NN::OBS[0], NN::OBS[1], NN::OBS[2]});
-    GCS_SEND_TEXT(MAV_SEVERITY_INFO, "angles (obs0..2): %s", obsStr.c_str());
+    // std::string obsStr = vectorToString({NN::OBS[0], NN::OBS[1], NN::OBS[2]});
+    // GCS_SEND_TEXT(MAV_SEVERITY_INFO, "angles (obs0..2): %s", obsStr.c_str());
 
     return motor_out;
 }
 
 void AC_CustomControl_XYZ::reset(void) {
-    policy_counter = 0;
 }
 
 // -----------------------------------------------------------------------------
@@ -115,20 +138,20 @@ void AC_CustomControl_XYZ::reset(void) {
 // -----------------------------------------------------------------------------
 
 // A small helper to embed a list of scalars (x[]) with shape [X] into shape [X, hidden_dim] flattened
+// Embed scalars with flattened weights and 1D bias
 static std::vector<float> embed_scalars_1batch(
-    const std::vector<float> &xs,             // [X]
-    const std::vector<float> &W_2d,           // e.g. ANG_EMB_W => shape [N_hidden, 1] flattened row-major
-    const std::vector<float> &b_1d,           // e.g. ANG_EMB_B => shape [N_hidden]
-    int hidden_dim)
-{
-    // Output => [X, hidden_dim], flatten => length = X*hidden_dim
+    const std::vector<float>& xs,
+    const std::vector<float>& W_1d,  // Flattened weights
+    const std::vector<float>& b_1d, // 1D bias
+    int hidden_dim
+) {
     std::vector<float> out(xs.size() * hidden_dim, 0.0f);
+
     for (size_t i = 0; i < xs.size(); i++) {
         float val = xs[i];
         for (int h = 0; h < hidden_dim; h++) {
-            // W_2d[h*1 + 0], since in_dim=1
-            float w = W_2d[h]; 
-            out[i*hidden_dim + h] = w * val + b_1d[h];
+            float w = W_1d[h];  // Access directly from flattened weights
+            out[i * hidden_dim + h] = w * val + b_1d[h];
         }
     }
     return out;
@@ -141,8 +164,8 @@ std::vector<float> AC_CustomControl_XYZ::forward_policy(const std::vector<float>
     // 1) Slice out angles, angvel, vel, etc. from "state" 
     //    and embed them
     //----------------------------------------------------------
-    // Suppose "state" has length >= 9 => 
-    //    [0..2] => angles, [3..5] => angvel, [6..8] => vel
+    // Suppose "state" has length >= 12 => 
+    //    [0..2] => angles, [3..5] => angvel, [6..8] => vel, [9..11] => target_angles
     // For "goal" or "task", you can adapt if needed
     const int hidden_dim = NN::ANG_EMB_B.size(); // e.g. 32
 
@@ -160,19 +183,122 @@ std::vector<float> AC_CustomControl_XYZ::forward_policy(const std::vector<float>
                                                            NN::ANGVEL_EMB_B,
                                                            hidden_dim);
 
-    // vel => shape [3], embed => [3, hidden_dim]
-    std::vector<float> rb_vel ( state.begin()+6, state.begin()+9 );
-    std::vector<float> embed_vel = embed_scalars_1batch(rb_vel,
-                                                        NN::VEL_EMB_W,
-                                                        NN::VEL_EMB_B,
+    // "action_init" => shape [action_dim, hidden_dim], flatten => length = action_dim*hidden_dim
+    // e.g. if N_act=3, shape => [3, hidden_dim]
+    std::vector<float> prev_act ( state.begin()+6, state.begin()+9);
+    std::vector<float> embed_act = embed_scalars_1batch(prev_act,
+                                                        NN::ACT_EMB_W,
+                                                        NN::ACT_EMB_B,
                                                         hidden_dim);
+    // std::vector<float> action_init_flat = NN::ACTION_INIT;
 
-    // For "goal" or "task", if you have them in state or separate, do similarly. 
-    // We'll skip "goal" for brevity, but you can replicate with e.g. ANG_EMB_W 
-    // or a separate embed. If you do have a "task" in NN::TASK, also embed that:
-    std::vector<float> embed_task;
-    {
-        // Suppose "NN::TASK" is shape [T], embed with TASK_EMB_W => shape [hidden_dim, 1]
-        embed_task = embed_scalars_1batch(
-            NN::TASK, // e.g. [1..some dim]
-            NN::TASK
+    // goal => shape [3], embed => [3, hidden_dim]
+    std::vector<float> goal_ang ( state.begin()+9, state.begin()+12 );
+    std::vector<float> embed_goal_ang = embed_scalars_1batch(goal_ang,
+                                                             NN::ANG_EMB_W,
+                                                             NN::ANG_EMB_B,
+                                                             hidden_dim);
+
+    // task => shape [T], embed => [T, hidden_dim]
+    std::vector<float> embed_task = embed_scalars_1batch(NN::TASK,
+                                                         NN::TASK_EMB_W,
+                                                         NN::TASK_EMB_B,
+                                                         hidden_dim);
+
+    //----------------------------------------------------------
+    // 2) Concatenate all node embeddings: 
+    //    angles(3) + angvel(3) + task(T) + prev_act(A)
+    //----------------------------------------------------------
+    // embed_ang.size()       => 3*hidden_dim
+    // embed_angvel.size()    => 3*hidden_dim
+    // embed_task.size()      => T*hidden_dim
+    std::vector<float> H_concat;
+    H_concat.insert(H_concat.end(), embed_ang.begin(),    embed_ang.end());
+    H_concat.insert(H_concat.end(), embed_angvel.begin(), embed_angvel.end());
+    H_concat.insert(H_concat.end(), embed_goal_ang.begin(),    embed_goal_ang.end());
+    H_concat.insert(H_concat.end(), embed_task.begin(),   embed_task.end());
+    H_concat.insert(H_concat.end(), embed_act.begin(),    embed_act.end());
+
+    std::string obsStr = vectorToString(NN_out);
+    GCS_SEND_TEXT(MAV_SEVERITY_INFO, "nnout: %s", obsStr.c_str());
+
+    int num_obs_nodes    = NN::N_STATE + NN::N_GOAL + NN::N_TASK; // e.g. 16, S(6)+G(3)+T(7)
+    int num_action_nodes = NN::N_ACT;                  // e.g. 3
+    int total_nodes      = num_obs_nodes + num_action_nodes; // e.g. 19
+
+    //----------------------------------------------------------
+    // 3) GCN layer
+    //----------------------------------------------------------
+    
+    // gcn0 => out => shape [total_nodes, hidden_dim], flattened
+    // we have: W => GCN0_W [hidden_dim * hidden_dim], b => GCN0_B [hidden_dim], optional LN => GCN0_LN_W, GCN0_LN_B
+    std::vector<float> H_gcn0 = GraphNN::gcn_1batch(
+        H_concat, 
+        total_nodes,
+        hidden_dim,
+        NN::A, 
+        NN::GCN0_W, 
+        NN::GCN0_B, 
+        hidden_dim,
+        NN::USE_LAYERNORM,
+        NN::GCN0_LN_W,
+        NN::GCN0_LN_B
+    );
+
+    //----------------------------------------------------------
+    // 4) Slice out action nodes => [B=1, A, hidden_dim]
+    //----------------------------------------------------------
+    // Those nodes are [num_obs_nodes..num_obs_nodes+num_action_nodes)
+    // We'll flatten them => length = A*hidden_dim
+    std::vector<float> H_actions(NN::N_ACT * hidden_dim);
+    for (int a = 0; a < NN::N_ACT; a++) {
+        for (int h = 0; h < hidden_dim; h++) {
+            H_actions[a*hidden_dim + h] = H_gcn0[(num_obs_nodes + a)*hidden_dim + h];
+        }
+    }
+
+    //----------------------------------------------------------
+    // 5) parallelFC => l_out => shape [A, hidden_dim]
+    //    flatten => length = A*hidden_dim
+    //----------------------------------------------------------
+    // l_out.weight => LOUT_W => shape [A, hidden_dim, hidden_dim]
+    // l_out.bias   => LOUT_B => shape [A, hidden_dim]
+    // We'll use parallel_fc_1batch with relu=true
+    std::vector<float> x_lout = GraphNN::parallel_fc_1batch(
+        H_actions,              // [A*hidden_dim]
+        NN::N_ACT,             // n_parallels
+        hidden_dim,             // in_dim
+        hidden_dim,             // out_dim
+        NN::LOUT_W,             // shape [A, hidden_dim, hidden_dim] flattened
+        NN::LOUT_B,             // shape [A, hidden_dim]
+        true                    // ReLU
+    );
+
+    //----------------------------------------------------------
+    // 6) parallelFC => mean_linear => shape [A,1] => flatten => [A]
+    //----------------------------------------------------------
+    // mean_w => MEAN_W => shape [A, 1, hidden_dim]
+    // mean_b => MEAN_B => shape [A, 1]
+    // so out_dim=1, relu=false
+    std::vector<float> bias(NN::N_ACT, 0.0);
+    std::vector<float> mean_out = GraphNN::parallel_fc_1batch(
+        x_lout,                 // [A*hidden_dim]
+        NN::N_ACT,             // n_parallels
+        hidden_dim,             // in_dim
+        1,                      // out_dim
+        NN::MEAN_W,             // shape [A,1,hidden_dim]
+        bias,                   // shape [A,1]
+        false                   // no ReLU
+    );  
+
+    // mean_out => length = A*1 => [A]
+
+    //----------------------------------------------------------
+    // 7) clamp to [-1, 1]
+    //----------------------------------------------------------
+    clampToRange(mean_out, -1.0f, 1.0f);
+
+    return mean_out;  // shape => [A]
+}
+
+// #endif  // AP_CUSTOMCONTROL_XYZ_ENABLED

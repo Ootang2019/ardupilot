@@ -7,11 +7,7 @@
 class AC_CustomControl_XYZ : public AC_CustomControl_Backend
 {
 private:
-    int policy_counter = 0;
-    int POLICY_FREQ = 4;
-    std::vector<float> NN_out;
-
-    void updateNNInput(const Vector3f& attitude_body, const Vector3f& gyro_latest, const Vector3f& airspeed_earth_ned);
+    void updateNNInput(const Quaternion& attitude_body, const Quaternion& attitude_target, const Vector3f& gyro_latest, const Vector3f& airspeed_earth_ned);
     void handleSpoolState();
 
 public:

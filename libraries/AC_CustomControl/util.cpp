@@ -2,14 +2,14 @@
 #include <cassert>
 #include <cmath>
 #include <algorithm>
-#include <sstream>
-#include <iostream>
 
 // ------------------------------------------------------------------------
 // Existing utility functions
 // ------------------------------------------------------------------------
 
 // for printing a 1D std::vector<float>
+#include <sstream>
+#include <iostream>
 std::string vectorToString(const std::vector<float>& vec) {
     std::string result = "[";
     for (size_t i = 0; i < vec.size(); ++i) {
@@ -399,7 +399,11 @@ std::vector<float> gcn_1batch(
     std::vector<float> out_matmul(N_nodes * in_dim, 0.0f);
     for (int i = 0; i < N_nodes; i++) {
         for (int j = 0; j < N_nodes; j++) {
-            float a_ij = A[i*N_nodes + j];
+            float a_ij = 0;
+            if (i>=N_nodes-3 && i<N_nodes){  // only compute last 3 rows
+                a_ij = A[(i+3-N_nodes)*N_nodes + j];
+            }
+
             for (int d = 0; d < in_dim; d++) {
                 out_matmul[i*in_dim + d] += a_ij * H[j*in_dim + d];
             }
@@ -441,6 +445,7 @@ std::vector<float> gcn_1batch(
     }
     return out_lin;
 }
+
 
 } // namespace GraphNN
 
