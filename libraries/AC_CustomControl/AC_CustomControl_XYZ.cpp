@@ -18,7 +18,7 @@
 #endif
 
 int policy_counter = 0;
-int POLICY_FREQ = 1;
+int POLICY_FREQ = 4;
 std::vector<float> NN_out={0.0,0.0,0.0};
 
 // table of user settable parameters
