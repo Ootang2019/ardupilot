@@ -59,7 +59,7 @@ void AC_CustomControl_XYZ::updateNNInput(const Quaternion& attitude_body,
 
     float rb_angle_enu_roll  = attitude_body.get_euler_pitch();
     float rb_angle_enu_pitch = attitude_body.get_euler_roll();
-    float rb_angle_enu_yaw   = -attitude_body.get_euler_yaw();
+    float rb_angle_enu_yaw   = attitude_body.get_euler_yaw();
 
     rb_angle_enu_roll  = mapAngleToRange(rb_angle_enu_roll);
     rb_angle_enu_pitch = mapAngleToRange(rb_angle_enu_pitch);
@@ -67,7 +67,7 @@ void AC_CustomControl_XYZ::updateNNInput(const Quaternion& attitude_body,
 
     float target_angle_enu_roll  = attitude_target.get_euler_pitch();
     float target_angle_enu_pitch = attitude_target.get_euler_roll();
-    float target_angle_enu_yaw   = -attitude_target.get_euler_yaw();
+    float target_angle_enu_yaw   = attitude_target.get_euler_yaw();
 
     float error_angle_enu_roll  = mapAngleToRange(target_angle_enu_roll-rb_angle_enu_roll);
     float error_angle_enu_pitch = mapAngleToRange(target_angle_enu_pitch-rb_angle_enu_pitch);
