@@ -130,6 +130,7 @@ namespace GraphNN {
     std::vector<float> gcn_1batch(
         const std::vector<float> &H,  // [N_nodes * in_dim]
         int N_nodes,
+        int N_action_nodes,
         int in_dim,
         const std::vector<float> &A,  // adjacency [N_nodes * N_nodes]
         const std::vector<float> &W,  // [out_dim * in_dim]

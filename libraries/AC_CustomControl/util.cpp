@@ -385,6 +385,7 @@ std::vector<float> parallel_fc_1batch(
 std::vector<float> gcn_1batch(
     const std::vector<float> &H,  
     int N_nodes,
+    int N_action_nodes,
     int in_dim,
     const std::vector<float> &A,  
     const std::vector<float> &W,  
@@ -400,8 +401,8 @@ std::vector<float> gcn_1batch(
     for (int i = 0; i < N_nodes; i++) {
         for (int j = 0; j < N_nodes; j++) {
             float a_ij = 0;
-            if (i>=N_nodes-3 && i<N_nodes){  // only compute last 3 rows
-                a_ij = A[(i+3-N_nodes)*N_nodes + j];
+            if (i<N_action_nodes){  // only compute last 3 rows
+                a_ij = A[i*N_nodes + j];
             }
 
             for (int d = 0; d < in_dim; d++) {

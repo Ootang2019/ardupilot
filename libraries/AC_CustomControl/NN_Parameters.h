@@ -13,6 +13,7 @@ static constexpr int N_STATE = 6;
 static constexpr int N_GOAL = 3;
 static constexpr int N_TASK = 7;
 static constexpr int N_HIDDEN = 16;
+static constexpr int N_EMBEDDING = 8;
 
 static constexpr float AVEL_LIM = 15.700000;
 static constexpr float POS_LIM = 999999.999999;

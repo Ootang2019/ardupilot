@@ -87,7 +87,6 @@ void AC_CustomControl_XYZ::updateNNInput(const Quaternion& attitude_body,
     NN::OBS[9]  = error_angle_enu_roll / PI;
     NN::OBS[10]  = error_angle_enu_pitch / PI;
     NN::OBS[11]  = error_angle_enu_yaw / PI;
-
 }
 
 // Update the controller and return the output
@@ -143,15 +142,15 @@ static std::vector<float> embed_scalars_1batch(
     const std::vector<float>& xs,
     const std::vector<float>& W_1d,  // Flattened weights
     const std::vector<float>& b_1d, // 1D bias
-    int hidden_dim
+    int embedding_dim
 ) {
-    std::vector<float> out(xs.size() * hidden_dim, 0.0f);
+    std::vector<float> out(xs.size() * embedding_dim, 0.0f);
 
     for (size_t i = 0; i < xs.size(); i++) {
         float val = xs[i];
-        for (int h = 0; h < hidden_dim; h++) {
+        for (int h = 0; h < embedding_dim; h++) {
             float w = W_1d[h];  // Access directly from flattened weights
-            out[i * hidden_dim + h] = w * val + b_1d[h];
+            out[i * embedding_dim + h] = w * val + b_1d[h];
         }
     }
     return out;
@@ -167,57 +166,57 @@ std::vector<float> AC_CustomControl_XYZ::forward_policy(const std::vector<float>
     // Suppose "state" has length >= 12 => 
     //    [0..2] => angles, [3..5] => angvel, [6..8] => vel, [9..11] => target_angles
     // For "goal" or "task", you can adapt if needed
-    const int hidden_dim = NN::ANG_EMB_B.size(); // e.g. 32
+    const int embedding_dim = NN::ANG_EMB_B.size(); // e.g. 32
+    const int hidden_dim = NN::GCN0_B.size();       // e.g. 64
 
-    // angles => shape [3], embed => [3, hidden_dim]
+    // angles => shape [3], embed => [3, embedding_dim]
     std::vector<float> rb_ang    ( state.begin()+0, state.begin()+3 );
     std::vector<float> embed_ang = embed_scalars_1batch(rb_ang, 
                                                         NN::ANG_EMB_W, 
                                                         NN::ANG_EMB_B, 
-                                                        hidden_dim);
+                                                        embedding_dim);
 
-    // angvel => shape [3], embed => [3, hidden_dim]
+    // angvel => shape [3], embed => [3, embedding_dim]
     std::vector<float> rb_angvel ( state.begin()+3, state.begin()+6 );
     std::vector<float> embed_angvel = embed_scalars_1batch(rb_angvel,
                                                            NN::ANGVEL_EMB_W,
                                                            NN::ANGVEL_EMB_B,
-                                                           hidden_dim);
+                                                           embedding_dim);
 
-    // "action_init" => shape [action_dim, hidden_dim], flatten => length = action_dim*hidden_dim
-    // e.g. if N_act=3, shape => [3, hidden_dim]
+    // "action_init" => shape [action_dim, embedding_dim], flatten => length = action_dim*embedding_dim
+    // e.g. if N_act=3, shape => [3, embedding_dim]
     std::vector<float> prev_act ( state.begin()+6, state.begin()+9);
     std::vector<float> embed_act = embed_scalars_1batch(prev_act,
                                                         NN::ACT_EMB_W,
                                                         NN::ACT_EMB_B,
-                                                        hidden_dim);
-    // std::vector<float> action_init_flat = NN::ACTION_INIT;
+                                                        embedding_dim);
 
-    // goal => shape [3], embed => [3, hidden_dim]
+    // goal => shape [3], embed => [3, embedding_dim]
     std::vector<float> goal_ang ( state.begin()+9, state.begin()+12 );
     std::vector<float> embed_goal_ang = embed_scalars_1batch(goal_ang,
                                                              NN::ANG_EMB_W,
                                                              NN::ANG_EMB_B,
-                                                             hidden_dim);
+                                                             embedding_dim);
 
-    // task => shape [T], embed => [T, hidden_dim]
+    // task => shape [T], embed => [T, embedding_dim]
     std::vector<float> embed_task = embed_scalars_1batch(NN::TASK,
                                                          NN::TASK_EMB_W,
                                                          NN::TASK_EMB_B,
-                                                         hidden_dim);
+                                                         embedding_dim);
 
     //----------------------------------------------------------
     // 2) Concatenate all node embeddings: 
     //    angles(3) + angvel(3) + task(T) + prev_act(A)
     //----------------------------------------------------------
-    // embed_ang.size()       => 3*hidden_dim
-    // embed_angvel.size()    => 3*hidden_dim
-    // embed_task.size()      => T*hidden_dim
+    // embed_ang.size()       => 3*embedding_dim
+    // embed_angvel.size()    => 3*embedding_dim
+    // embed_task.size()      => T*embedding_dim
     std::vector<float> H_concat;
+    H_concat.insert(H_concat.end(), embed_act.begin(),    embed_act.end());
     H_concat.insert(H_concat.end(), embed_ang.begin(),    embed_ang.end());
     H_concat.insert(H_concat.end(), embed_angvel.begin(), embed_angvel.end());
     H_concat.insert(H_concat.end(), embed_goal_ang.begin(),    embed_goal_ang.end());
     H_concat.insert(H_concat.end(), embed_task.begin(),   embed_task.end());
-    H_concat.insert(H_concat.end(), embed_act.begin(),    embed_act.end());
 
     int num_obs_nodes    = NN::N_STATE + NN::N_GOAL + NN::N_TASK; // e.g. 16, S(6)+G(3)+T(7)
     int num_action_nodes = NN::N_ACT;                  // e.g. 3
@@ -232,7 +231,8 @@ std::vector<float> AC_CustomControl_XYZ::forward_policy(const std::vector<float>
     std::vector<float> H_gcn0 = GraphNN::gcn_1batch(
         H_concat, 
         total_nodes,
-        hidden_dim,
+        num_action_nodes,
+        embedding_dim,
         NN::A, 
         NN::GCN0_W, 
         NN::GCN0_B, 
@@ -241,16 +241,18 @@ std::vector<float> AC_CustomControl_XYZ::forward_policy(const std::vector<float>
         NN::GCN0_LN_W,
         NN::GCN0_LN_B
     );
+    // std::string H_gcn0_Str = vectorToString(H_gcn0);
+    // GCS_SEND_TEXT(MAV_SEVERITY_INFO, "H_gcn0: %s", H_gcn0_Str.c_str());
 
     //----------------------------------------------------------
     // 4) Slice out action nodes => [B=1, A, hidden_dim]
     //----------------------------------------------------------
-    // Those nodes are [num_obs_nodes..num_obs_nodes+num_action_nodes)
+    // Those nodes are [:num_action_nodes)
     // We'll flatten them => length = A*hidden_dim
-    std::vector<float> H_actions(NN::N_ACT * hidden_dim);
-    for (int a = 0; a < NN::N_ACT; a++) {
+    std::vector<float> H_actions(num_action_nodes * hidden_dim);
+    for (int a = 0; a < num_action_nodes; a++) {
         for (int h = 0; h < hidden_dim; h++) {
-            H_actions[a*hidden_dim + h] = H_gcn0[(num_obs_nodes + a)*hidden_dim + h];
+            H_actions[a*hidden_dim + h] = H_gcn0[a*hidden_dim + h];
         }
     }
 
