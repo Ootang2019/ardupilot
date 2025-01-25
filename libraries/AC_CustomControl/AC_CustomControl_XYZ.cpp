@@ -77,7 +77,7 @@ void AC_CustomControl_XYZ::updateNNInput(const Quaternion& attitude_body,
     // Just store these in NN::OBS for now, or you might store them in a local vector
     NN::OBS[0] = rb_angle_enu_roll  / PI;
     NN::OBS[1] = rb_angle_enu_pitch / PI;
-    NN::OBS[2] = rb_angle_enu_yaw   / PI;
+    NN::OBS[2] = -rb_angle_enu_yaw   / PI;
 
     Vector3f rb_ned_angvel = gyro_latest / NN::AVEL_LIM;
     NN::OBS[3] = rb_ned_angvel[1];
@@ -86,7 +86,7 @@ void AC_CustomControl_XYZ::updateNNInput(const Quaternion& attitude_body,
 
     NN::OBS[9]  = error_angle_enu_roll / PI;
     NN::OBS[10]  = error_angle_enu_pitch / PI;
-    NN::OBS[11]  = error_angle_enu_yaw / PI;
+    NN::OBS[11]  = -error_angle_enu_yaw / PI;
 }
 
 // Update the controller and return the output
@@ -118,7 +118,7 @@ Vector3f AC_CustomControl_XYZ::update(void) {
     Vector3f motor_out;
     motor_out.x = authority * NN_out[1];
     motor_out.y = authority * NN_out[0];
-    motor_out.z = -authority * NN_out[2];
+    motor_out.z = authority * NN_out[2];
     // motor_out.z = 0;
 
 
