@@ -11,6 +11,7 @@
 #include <cmath>  // for fmod, etc.
 
 #include "util.h"           // includes your updated utility + GraphNN declarations
+#include "FIFOBuffer.h"
 #include "NN_Parameters.h"  // includes your trained model parameters
 
 #ifndef PI
@@ -18,8 +19,10 @@
 #endif
 
 int policy_counter = 0;
+int adaptor_counter = 0;
 int POLICY_FREQ = 4;
-std::vector<float> NN_out={0.0,0.0,0.0};
+int ADAPTOR_FREQ = 80;
+// std::vector<float> NN_out={0.0,0.0,0.0};
 
 // table of user settable parameters
 const AP_Param::GroupInfo AC_CustomControl_XYZ::var_info[] = {
@@ -32,10 +35,23 @@ AC_CustomControl_XYZ::AC_CustomControl_XYZ(AC_CustomControl &frontend,
                                            AC_AttitudeControl *&att_control, 
                                            AP_MotorsMulticopter *&motors, 
                                            float dt)
-    : AC_CustomControl_Backend(frontend, ahrs, att_control, motors, dt)
+    : AC_CustomControl_Backend(frontend, ahrs, att_control, motors, dt),
+      fifoBuffer(NN::N_STACK), env_latent(NN::N_LATENT, 0.0), NN_out(NN::N_ACT, 0.0)
 {
     AP_Param::setup_object_defaults(this, AC_CustomControl_XYZ::var_info);
+
+    resetAdaptorBuffer();
+
 }
+
+// Reset buffer for the adaptor
+void AC_CustomControl_XYZ::resetAdaptorBuffer() {
+    std::vector<float> zeros_state(NN::N_STATE+NN::N_ACT, 0.0);
+    for (int i = 0; i < NN::N_STACK; ++i) {
+        fifoBuffer.insert(zeros_state);
+    }
+}
+
 
 void AC_CustomControl_XYZ::handleSpoolState() {
     switch (_motors->get_spool_state()) {
@@ -101,11 +117,19 @@ Vector3f AC_CustomControl_XYZ::update(void) {
     updateNNInput(attitude_body, attitude_target, gyro_latest, _ahrs->airspeed_vector());
 
     // forward pass
+    adaptor_counter += 1;
+    if (adaptor_counter >= ADAPTOR_FREQ) {
+        env_latent = forward_adaptor();
+        adaptor_counter = 0;
+    }
+
     policy_counter += 1;
     if (policy_counter >= POLICY_FREQ) {
-        policy_counter = 0;  // Reset the counter after performing the update
-        NN_out = forward_policy(NN::OBS);  
-    } 
+        NN_out = forward_policy(NN::OBS, env_latent);  
+        policy_counter = 0; 
+        
+    }
+
     // std::string obsStr = vectorToString(NN_out);
     // GCS_SEND_TEXT(MAV_SEVERITY_INFO, "nnout: %s", obsStr.c_str());
 
@@ -121,7 +145,9 @@ Vector3f AC_CustomControl_XYZ::update(void) {
     motor_out.z = authority * NN_out[2];
     // motor_out.z = 0;
 
-
+    std::vector<float> buf_input(NN::OBS.begin(), NN::OBS.begin() + NN::N_STATE + NN::N_ACT);
+    fifoBuffer.insert(buf_input);
+    
     // Debug info
     // std::string obsStr = vectorToString({NN::OBS[0], NN::OBS[1], NN::OBS[2]});
     // GCS_SEND_TEXT(MAV_SEVERITY_INFO, "angles (obs0..2): %s", obsStr.c_str());
@@ -130,6 +156,9 @@ Vector3f AC_CustomControl_XYZ::update(void) {
 }
 
 void AC_CustomControl_XYZ::reset(void) {
+    // policy_counter = 0;
+    // adaptor_counter = 0;
+    // resetAdaptorBuffer();
 }
 
 // -----------------------------------------------------------------------------
@@ -157,7 +186,7 @@ static std::vector<float> embed_scalars_1batch(
 }
 
 // This is your GCN forward pass
-std::vector<float> AC_CustomControl_XYZ::forward_policy(const std::vector<float>& state)
+std::vector<float> AC_CustomControl_XYZ::forward_policy(const std::vector<float>& state, const std::vector<float>& latent_z)
 {
     //----------------------------------------------------------
     // 1) Slice out angles, angvel, vel, etc. from "state" 
@@ -198,6 +227,12 @@ std::vector<float> AC_CustomControl_XYZ::forward_policy(const std::vector<float>
                                                              NN::ANG_EMB_B,
                                                              embedding_dim);
 
+    std::vector<float> embed_env_latent = embed_scalars_1batch(latent_z,
+                                                               NN::LATENT_EMB_W,
+                                                               NN::LATENT_EMB_B,
+                                                               embedding_dim);
+
+
     // task => shape [T], embed => [T, embedding_dim]
     std::vector<float> embed_task = embed_scalars_1batch(NN::TASK,
                                                          NN::TASK_EMB_W,
@@ -216,9 +251,10 @@ std::vector<float> AC_CustomControl_XYZ::forward_policy(const std::vector<float>
     H_concat.insert(H_concat.end(), embed_ang.begin(),    embed_ang.end());
     H_concat.insert(H_concat.end(), embed_angvel.begin(), embed_angvel.end());
     H_concat.insert(H_concat.end(), embed_goal_ang.begin(),    embed_goal_ang.end());
+    H_concat.insert(H_concat.end(), embed_env_latent.begin(),    embed_env_latent.end());
     H_concat.insert(H_concat.end(), embed_task.begin(),   embed_task.end());
 
-    int num_obs_nodes    = NN::N_STATE + NN::N_GOAL + NN::N_TASK; // e.g. 16, S(6)+G(3)+T(7)
+    int num_obs_nodes    = NN::N_STATE + NN::N_GOAL + NN::N_LATENT + NN::N_TASK; // e.g. 16, S(6)+G(3)+T(7)
     int num_action_nodes = NN::N_ACT;                  // e.g. 3
     int total_nodes      = num_obs_nodes + num_action_nodes; // e.g. 19
 
@@ -300,4 +336,30 @@ std::vector<float> AC_CustomControl_XYZ::forward_policy(const std::vector<float>
     return mean_out;  // shape => [A]
 }
 
+// Adaptor forward pass
+std::vector<float> AC_CustomControl_XYZ::forward_adaptor(void) {
+    std::vector<std::vector<float>> table = fifoBuffer.getTransposedTable();
+    std::vector<std::vector<float>> x_tmp1 = conv1d(table, NN::CNN_W1, NN::CNN_B1, 1, NN::N_PADD, 1);
+    std::vector<std::vector<float>> x_tmp2 = chomp1d(x_tmp1, NN::N_PADD);
+    x_tmp2 = relu2D(x_tmp2);
+    x_tmp2 = vec2DAdd(x_tmp2, table);
+    x_tmp2 = relu2D(x_tmp2);
+
+    // if (NN::N_TCN_LAYER > 1) {
+    //     x_tmp1 = conv1d(x_tmp2, NN::CNN_W2, NN::CNN_B2, 1, NN::N_PADD * 2, 2);
+    //     x_tmp2 = chomp1d(x_tmp1, NN::N_PADD * 2);
+    //     x_tmp2 = relu2D(x_tmp2);
+    //     x_tmp2 = vec2DAdd(x_tmp2, x_tmp1);
+    //     x_tmp2 = relu2D(x_tmp2);
+    // }
+
+    std::vector<float> z_tmp = getLastColumn(x_tmp2);
+    std::vector<float> z = linear_layer(NN::CNN_LB, NN::CNN_LW, z_tmp, false);
+    z = linear_layer(NN::CNN_LIN_B, NN::CNN_LIN_W, z, true);
+    z = linear_layer(NN::CNN_LIN0_B, NN::CNN_LIN0_W, z, true);
+    z = linear_layer(NN::CNN_LIN1_B, NN::CNN_LIN1_W, z, true);
+    z = linear_layer(NN::CNN_LOUT_B, NN::CNN_LOUT_W, z, false);
+
+    return z;
+}
 // #endif  // AP_CUSTOMCONTROL_XYZ_ENABLED
